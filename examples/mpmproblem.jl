@@ -1,5 +1,5 @@
 
-using MPMEstimate, Distributions
+using MPMEstimate, Distributions, Random
 
 N = 9
 
@@ -15,7 +15,13 @@ prob = MPMProblem(
     end
 )
 
-x, = prob.sample_x_z(1)
 
-mpm(prob, x, 1, nsims=1000)
+x, = prob.sample_x_z(MersenneTwister(1), 1)
 
+θ_MPM, σθ, history = mpm(prob, x, 1, nsims=1000, nsteps=10)
+
+##
+close(:all)
+plot([h.θ for h in history])
+gcf()
+##

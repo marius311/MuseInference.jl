@@ -6,6 +6,7 @@ using Optim
 using ProgressMeter
 using Random
 using Requires
+using Setfield
 
 export MPMProblem, mpm
 
@@ -25,7 +26,7 @@ function sample_x_z(prob::AbstractMPMProblem, rng::AbstractRNG, θ) end
 ## generic AbstractMPMProblem solution
 
 function ẑ_at_θ(prob::AbstractMPMProblem, x, θ, z₀)
-    soln = optimize(Optim.only_fg(z -> logP_and_∇z_logP(prob, x, θ, z)), z₀, Optim.LBFGS(), Optim.Options(f_tol=1e-3))
+    soln = optimize(Optim.only_fg(z -> .-logP_and_∇z_logP(prob, x, θ, z)), z₀, Optim.LBFGS(), Optim.Options(f_tol=1e-3))
     soln.minimizer
 end
 
@@ -43,6 +44,7 @@ function mpm(
     θ = θ₀
     local g_sims₀, σθ
     history = Any[(;θ)]
+    rng = copy(rng)
 
     @showprogress for i=1:nsteps
 
@@ -117,12 +119,54 @@ sample_x_z(prob::MPMProblem, rng::AbstractRNG, θ) = prob.sample_x_z(rng, θ)
 
 ### TuringMPMProblem
 
-struct TuringMPMProblem{M} <: AbstractMPMProblem
-    model :: M
+@init @require Turing="fce5fe82-541a-59a6-adf8-730c64b5f9a0" begin
+
+    import .Turing
+    using .Turing: VarInfo, gradient_logp, SampleFromPrior, DefaultContext
+    
+    export TuringMPMProblem
+
+    struct TuringMPMProblem{M,P} <: AbstractMPMProblem
+        model :: M
+        model_for_sampling_prior :: P
+    end
+
+    TuringMPMProblem(model) = TuringMPMProblem(model, @set(model.args = _args_for_sampling_prior(model.args)))
+
+    _args_for_sampling_prior(x::NamedTuple) = map(_args_for_sampling_prior, x)
+    _args_for_sampling_prior(x::Real) = missing
+    _args_for_sampling_prior(x::AbstractVector{T}) where {T} = map!(_args_for_sampling_prior, similar(x,Union{T,Missing}), x)
+    _args_for_sampling_prior(x) = x
+
+
+    # todo: figure out how to use Selector (?) to generically get the
+    # right parameter sub-spaces rather than manually indexing into these
+    # vectors
+
+    function ∇θ_logP(prob::TuringMPMProblem, x, θ, z)
+        model = prob.model
+        @set! model.args.x = x
+        _, g = gradient_logp(Turing.ForwardDiffAD{1}(), [θ; z], VarInfo(model), model)
+        θ isa Real ? g[1] : g[1:length(θ)]
+    end
+
+    function logP_and_∇z_logP(prob::TuringMPMProblem, x, θ, z)
+        model = prob.model
+        @set! model.args.x = x
+        f, g = gradient_logp(Turing.ForwardDiffAD{1}(), [θ; z], VarInfo(model), model)
+        f, g[length(θ)+1:end]
+    end
+
+    function sample_x_z(prob::TuringMPMProblem, rng::AbstractRNG, θ)
+        model = prob.model_for_sampling_prior
+        @set! model.args.θ = θ
+        vi = VarInfo()
+        x = identity.(model(rng, vi))
+        z = identity.(vi.metadata.vals[1:(end-length(x))]) 
+        (;x, z)
+    end
+
 end
-
-
-
 
 
 
