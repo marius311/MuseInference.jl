@@ -2,7 +2,7 @@
 # ensure in right directory and environment
 cd(dirname(@__FILE__))
 using Pkg
-pkg"activate ."
+Pkg.activate(".")
 
 using Documenter
 using MPMEstimate
@@ -13,12 +13,14 @@ makedocs(
         assets = ["assets/mpmestimate.css"],
         disable_git = true,
     ),
+    strict = true,
     modules = [MPMEstimate]
 )
 
-# Documenter can also automatically deploy documentation to gh-pages.
-# See "Hosting Documentation" and deploydocs() in the Documenter manual
-# for more information.
-#=deploydocs(
-    repo = "<repository url>"
-)=#
+deploydocs(
+    repo = "https://github.com/marius311/MPMEstimate.jl",
+    devbranch = "main",
+    devurl = "latest",
+    push_preview = true,
+    forcepush = true
+)

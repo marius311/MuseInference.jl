@@ -1,5 +1,9 @@
 # MPMEstimate.jl
 
+[![](https://img.shields.io/badge/documentation-latest-blue.svg)](https://cosmicmar.com/MPMEstimate.jl/latest) [![](https://img.shields.io/badge/source-github-blue)](https://github.com/marius311/MPMEstimate.jl)
+
+[![](https://github.com/marius311/MPMEstimate.jl/actions/workflows/docs.yml/badge.svg)](https://github.com/marius311/MPMEstimate.jl/actions/workflows/docs.yml)
+
 The Maximum Posterior Mass (MPM) estimate is a general tool for hierarchical Bayesian inference. It provides an (often extremely good) approximation to the posterior distribution, and is faster than other methods such as Hamiltonian Monte Carlo (HMC), Variational Inference (VI), Likelihood-Free Inference (LFI). It excels on problems which are high-dimensional and mildly-to-moderately non-Gaussian. 
 
 MPM works on standard hierarchical problems, where the likelihood is of the form:
@@ -29,6 +33,7 @@ First, load up the relevant packages:
 ```@example 1
 using MPMEstimate, DynamicHMC, Random, Turing, PyPlot
 PyPlot.ioff() # hide
+nothing # hide
 ```
 
 As an example, consider the following hierarchical problem, which has the classic [Neal's Funnel](https://mc-stan.org/docs/2_18/stan-users-guide/reparameterization-section.html) problem embedded in it. Neal's funnel is a standard example of a non-Gaussian latent space which HMC struggles to sample efficiently without extra tricks. Specifically, we consider the model defined by:
@@ -64,7 +69,9 @@ We can run HMC on the problem to compute an "exact" answer to compare against:
 
 ```@example 1
 Turing.PROGRESS[] = false # hide
+Random.seed!(1) # hide
 sample(model, DynamicNUTS(), 10); # warmup # hide
+Random.seed!(1) # hide
 chain = @time sample(model, DynamicNUTS(), 5000)
 nothing # hide
 ```
@@ -149,11 +156,12 @@ And compute the estimate:
 
 ```@example 1
 Random.seed!(5) # hide
+mpm(prob, x, 1) # warmup # hide
 θ̂′, σθ′ = @time mpm(prob, x, 1)
 nothing # hide
 ```
 
-Finally, we can verify that the answer is identical to the answer computed with Turing:
+Finally, we can verify that the answer is identical to the answer computed when the problem was specified with Turing:
 
 ```@example 1
 figure(figsize=(6,5)) # hide
