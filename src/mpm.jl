@@ -26,7 +26,8 @@ function mpm(
     z₀ = sample_x_z(prob, copy(rng), θ₀).z,
     nsteps = 5,
     nsims = 100,
-    α = 0.7
+    α = 0.7,
+    progress = false
 )
 
     θ = θ₀
@@ -34,19 +35,25 @@ function mpm(
     history = Any[(;θ)]
     rng = copy(rng)
 
+    pbar = Progress(nsteps*(nsims+1), (progress ? 0 : Inf), "MPM: ")
+    ProgressMeter.update!(pbar)
+
     for i=1:nsteps
 
         ẑ = ẑ_at_θ(prob, x, θ, z₀)
         g_dat = ∇θ_logP(prob, x, θ, ẑ)
+        next!(pbar)
 
         _rng = copy(rng)
         g_sims = map(1:nsims) do i
             x_sim, z_sim = sample_x_z(prob, _rng, θ)
-            ∇θ_logP(prob, x_sim, θ, ẑ_at_θ(prob, x_sim, θ, z_sim))
+            g_sim = ∇θ_logP(prob, x_sim, θ, ẑ_at_θ(prob, x_sim, θ, z_sim))
+            next!(pbar)
+            g_sim
         end
 
-        σθ = 1 / std(g_sims)
-        θ = θ + α * (var(g_sims) \ (g_dat - mean(g_sims)))
+        σθ = @. 1 / $std(g_sims)
+        θ = @. θ + α * ($var(g_sims) \ (g_dat - $mean(g_sims)))
 
         z₀ = ẑ
         push!(history, (;θ, g_dat, g_sims, σθ))
