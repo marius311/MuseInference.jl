@@ -27,36 +27,58 @@ function mpm(
     nsteps = 5,
     nsims = 100,
     α = 0.7,
-    progress = false
+    progress = false,
+    map = map,
 )
 
     θ = θ₀
-    local g_sims₀, σθ
+    local σθ
     history = Any[(;θ)]
-    rng = copy(rng)
+    
+    _rng = copy(rng)
+    xz_sims = [sample_x_z(prob, _rng, θ) for i=1:nsims]
+    xs = [[x];  getindex.(xz_sims, :x)]
+    ẑs = [[z₀]; getindex.(xz_sims, :z)]
 
-    pbar = Progress(nsteps*(nsims+1), (progress ? 0 : Inf), "MPM: ")
-    ProgressMeter.update!(pbar)
-
-    for i=1:nsteps
-
-        ẑ = ẑ_at_θ(prob, x, θ, z₀)
-        g_dat = ∇θ_logP(prob, x, θ, ẑ)
-        next!(pbar)
-
-        _rng = copy(rng)
-        g_sims = map(1:nsims) do i
-            x_sim, z_sim = sample_x_z(prob, _rng, θ)
-            g_sim = ∇θ_logP(prob, x_sim, θ, ẑ_at_θ(prob, x_sim, θ, z_sim))
+    # set up progress bar
+    if progress
+        pbar = Progress(nsteps*(nsims+1), 0.1, "MPM: ")
+        ProgressMeter.update!(pbar)
+        update_pbar = RemoteChannel(()->Channel{Bool}(), 1)
+        @async while take!(update_pbar)
             next!(pbar)
-            g_sim
+        end
+    end
+
+    try
+    
+        for i=1:nsteps
+            
+            if i>1
+                _rng = copy(rng)
+                xs = [[x]; [sample_x_z(prob, _rng, θ).x for i=1:nsims]]
+            end
+
+            gẑs = map(xs, ẑs) do x, ẑ_prev
+                ẑ = ẑ_at_θ(prob, x, θ, ẑ_prev)
+                g = ∇θ_logP(prob, x, θ, ẑ)
+                progress && put!(update_pbar, true)
+                (;g, ẑ)
+            end
+
+            ẑs = getindex.(gẑs, :ẑ)
+            g_dat, g_sims = peel(getindex.(gẑs, :g))
+
+            σθ = 1 ./ std(collect(g_sims))
+            θ = @. θ + α * σθ^2 * (g_dat - $mean(g_sims))
+
+            push!(history, (;θ, g_dat, g_sims, σθ))
+
         end
 
-        σθ = @. 1 / $std(g_sims)
-        θ = @. θ + α * ($var(g_sims) \ (g_dat - $mean(g_sims)))
+    finally
 
-        z₀ = ẑ
-        push!(history, (;θ, g_dat, g_sims, σθ))
+        progress && put!(update_pbar, false)
 
     end
 
