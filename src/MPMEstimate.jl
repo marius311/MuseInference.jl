@@ -1,5 +1,7 @@
 module MPMEstimate
 
+using Base.Iterators: peel
+using Distributed
 using Distributions
 using ForwardDiff
 using Optim
