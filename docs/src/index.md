@@ -4,7 +4,7 @@
 
 [![](https://github.com/marius311/MPMEstimate.jl/actions/workflows/docs.yml/badge.svg)](https://github.com/marius311/MPMEstimate.jl/actions/workflows/docs.yml)
 
-The Maximum Posterior Mass (MPM) estimate is a general tool for hierarchical Bayesian inference. It provides an (often extremely good) approximation to the posterior distribution, and is faster than other methods such as Hamiltonian Monte Carlo (HMC), Variational Inference (VI), Likelihood-Free Inference (LFI). It excels on problems which are high-dimensional and mildly-to-moderately non-Gaussian. 
+The Maximum Posterior Mass (MPM) estimate is a generic tool for hierarchical Bayesian inference. It provides an (often extremely good) approximation to the posterior distribution, and is faster than other methods such as Hamiltonian Monte Carlo (HMC), Variational Inference (VI), Likelihood-Free Inference (LFI). It excels on problems which are high-dimensional and mildly-to-moderately non-Gaussian. 
 
 MPM works on standard hierarchical problems, where the likelihood is of the form:
 
@@ -167,8 +167,8 @@ Finally, we can verify that the answer is identical to the answer computed when 
 figure(figsize=(6,5)) # hide
 hist(collect(chain["θ"][:]), density=true, bins=20, label="HMC")
 θs = range(-1,3,length=1000)
-plot(θs, pdf.(Normal(θ̂, σθ), θs), label="MPM")
-plot(θs, pdf.(Normal(θ̂′, σθ′), θs), label="MPM", ls="--")
+plot(θs, pdf.(Normal(θ̂, σθ), θs), label="MPM (Turing)")
+plot(θs, pdf.(Normal(θ̂′, σθ′), θs), label="MPM (Manual)", ls="--")
 legend()
 xlabel(L"\theta")
 ylabel(L"\mathcal{P}(\theta\,|\,x)")
