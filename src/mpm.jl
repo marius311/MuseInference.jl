@@ -29,10 +29,11 @@ function mpm(
     α = 0.7,
     progress = false,
     map = map,
+    regularize = (θ,σθ) -> θ,
 )
 
     θ = θ₀
-    local σθ
+    local σθ, θunreg
     history = Any[(;θ)]
     
     _rng = copy(rng)
@@ -70,9 +71,10 @@ function mpm(
             g_dat, g_sims = peel(getindex.(gẑs, :g))
 
             σθ = 1 ./ std(collect(g_sims))
-            θ = @. θ + α * σθ^2 * (g_dat - $mean(g_sims))
+            θunreg = @. θ + α * σθ^2 * (g_dat - $mean(g_sims))
+            θ = regularize(θ, σθ)
 
-            push!(history, (;θ, g_dat, g_sims, σθ))
+            push!(history, (;θ, θunreg, g_dat, g_sims, σθ))
 
         end
 
@@ -82,6 +84,6 @@ function mpm(
 
     end
 
-    θ, σθ, history
+    θunreg, σθ, history
 
 end
