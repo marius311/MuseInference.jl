@@ -146,7 +146,7 @@ prob = MPMProblem(
         (;x, z)
     end,
     function logP(x, θ, z)
-        -(1//2) * (sum(z.^2) / exp(θ) + sum((x .- z).^2))
+        -(1//2) * (sum((x .- z).^2) + sum(z.^2) / exp(θ) + 50*θ)
     end
 )
 nothing # hide
@@ -155,8 +155,8 @@ nothing # hide
 And compute the estimate:
 
 ```@example 1
-Random.seed!(5) # hide
 mpm(prob, x, 1) # warmup # hide
+Random.seed!(5) # hide
 θ̂′, σθ′ = @time mpm(prob, x, 1)
 nothing # hide
 ```
@@ -167,7 +167,7 @@ Finally, we can verify that the answer is identical to the answer computed when 
 figure(figsize=(6,5)) # hide
 hist(collect(chain["θ"][:]), density=true, bins=20, label="HMC")
 θs = range(-1,3,length=1000)
-plot(θs, pdf.(Normal(θ̂, σθ), θs), label="MPM (Turing)")
+plot(θs, pdf.(Normal(θ̂,  σθ),  θs), label="MPM (Turing)")
 plot(θs, pdf.(Normal(θ̂′, σθ′), θs), label="MPM (Manual)", ls="--")
 legend()
 xlabel(L"\theta")

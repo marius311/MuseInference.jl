@@ -72,7 +72,7 @@ function mpm(
 
             σθ = 1 ./ std(collect(g_sims))
             θunreg = @. θ + α * σθ^2 * (g_dat - $mean(g_sims))
-            θ = regularize(θ, σθ)
+            θ = regularize(θunreg, σθ)
 
             push!(history, (;θ, θunreg, g_dat, g_sims, σθ))
 
