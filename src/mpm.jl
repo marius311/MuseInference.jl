@@ -87,3 +87,26 @@ function mpm(
     θunreg, σθ, history
 
 end
+
+
+function get_H(prob::AbstractMPMProblem, θ₀; nsims=1, ϵ=0.05, map=map)
+    
+    fdm = central_fdm(2, 1, adapt=0)
+
+    # do initial fit at θ₀ for each sim, used as starting points below
+    ẑ₀s_rngs = map(1:nsims) do i
+        _rng = copy(rng)
+        x, z = sample_x_z(prob, rng, θ₀)
+        ẑ = ẑ_at_θ(prob, x, θ₀, z)
+        (ẑ, _rng)
+    end
+
+    mean(ẑ₀s_rngs) do ẑ₀, rng
+        pjacobian(fdm, θ₀, ϵ) do θ
+            x, = sample_x_z(prob, copy(rng), θ)
+            ẑ = ẑ_at_θ(prob, x, θ₀, ẑ₀)
+            ∇θ_logP(prob, x, θ₀, ẑ)
+        end
+    end
+
+end
