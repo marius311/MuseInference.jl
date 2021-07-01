@@ -127,8 +127,8 @@ It is also possible to use MPMEstimate without Turing. The MPM estimate requires
 2. A function which computes the likelihood, $\mathcal{P}(x\,|\,\theta,z)$, with signature:
 
    ```julia
-   function logP(x, θ, z) 
-       # return log probability
+   function logLike(x, θ, z) 
+       # return log likelihood
    end
    ```
 
@@ -145,7 +145,7 @@ prob = MPMProblem(
         x = rand(rng, MvNormal(z, 1))
         (;x, z)
     end,
-    function logP(x, θ, z)
+    function logLike(x, θ, z)
         -(1//2) * (sum((x .- z).^2) + sum(z.^2) / exp(θ) + 50*θ)
     end
 )

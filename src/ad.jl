@@ -11,6 +11,8 @@ _val_and_gradient(autodiff, f, x) = error("Run `using $(string(autodiff)[1:end-4
 # ForwardDiff (loaded by default)
 _gradient(::ForwardDiffAD, f, x::Real) = ForwardDiff.derivative(f, x)
 _gradient(::ForwardDiffAD, f, x) = ForwardDiff.gradient(f, x)
+_hessian(::ForwardDiffAD, f, x::Real) = first(ForwardDiff.hessian(f∘first, [x]))
+_hessian(::ForwardDiffAD, f, x) = ForwardDiff.hessian(f, x)
 _val_and_gradient(::ForwardDiffAD, f, x) = f(x), _gradient(ForwardDiffAD(), f, x)
 
 # Zygote
