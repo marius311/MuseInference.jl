@@ -30,6 +30,8 @@ function mpm(
     progress = false,
     map = map,
     regularize = (θ,σθ) -> θ,
+    ∇θ_logPrior = θ -> 0,
+    Hθ_estimate = nothing
 )
 
     θ = θ₀
@@ -70,11 +72,19 @@ function mpm(
             ẑs = getindex.(gẑs, :ẑ)
             g_dat, g_sims = peel(getindex.(gẑs, :g))
 
-            σθ = 1 ./ std(collect(g_sims))
-            θunreg = @. θ + α * σθ^2 * (g_dat - $mean(g_sims))
-            θ = regularize(θunreg, σθ)
+            if Hθ_estimate == nothing
+                # diagonal hessian approximation based on gradient sims
+                Hθ = Diagonal(var(collect(g_sims)))
+            else
+                # provided hessian
+                Hθ = Hθ_estimate
+            end
+            σθ = 1 ./ sqrt.(diag(Hθ))
+            g_mpm = g_dat .- mean(g_sims) .- ∇θ_logPrior(θ)
+            θunreg = θ .+ α .* (Hθ \ g_mpm)
+            θ = regularize(θunreg, Hθ)
 
-            push!(history, (;θ, θunreg, g_dat, g_sims, σθ))
+            push!(history, (;θ, θunreg, g_dat, g_sims, g_mpm, Hθ, σθ))
 
         end
 
