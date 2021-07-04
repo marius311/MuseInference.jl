@@ -3,6 +3,7 @@ module MPMEstimate
 using Base.Iterators: peel
 using Distributed
 using Distributions
+using FiniteDifferences
 using ForwardDiff
 using LinearAlgebra
 using Optim
@@ -13,7 +14,7 @@ using Setfield
 
 export MPMProblem, mpm
 
-
+include("util.jl")
 include("mpm.jl")
 include("ad.jl")
 include("manual.jl")

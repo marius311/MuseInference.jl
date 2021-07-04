@@ -106,24 +106,44 @@ function mpm(
 end
 
 
-function get_H(prob::AbstractMPMProblem, θ₀; nsims=1, ϵ=0.05, map=map)
-    
-    fdm = central_fdm(2, 1, adapt=0)
+function get_H(
+    prob :: AbstractMPMProblem, 
+    θ₀, 
+    fdm :: FiniteDifferenceMethod = central_fdm(3,1); 
+    rng = copy(Random.default_rng()),
+    nsims = 1, 
+    step = nothing, 
+    pmap = map,
+    progress = true
+)
+
+    if progress
+        pbar = Progress(nsims*(1+length(θ₀)), 0.1, "get_H: ")
+        ProgressMeter.update!(pbar)
+        pbar_ch = RemoteChannel(()->Channel{Bool}(), 1)
+        @async while take!(pbar_ch)
+            next!(pbar)
+        end
+        update_pbar = () -> put!(pbar_ch, true)
+    else
+        update_pbar = () -> nothing
+    end
 
     # do initial fit at θ₀ for each sim, used as starting points below
-    ẑ₀s_rngs = map(1:nsims) do i
+    ẑ₀s_rngs = pmap(1:nsims) do i
         _rng = copy(rng)
         x, z = sample_x_z(prob, rng, θ₀)
         ẑ = ẑ_at_θ(prob, x, θ₀, z)
+        update_pbar()
         (ẑ, _rng)
     end
 
-    mean(ẑ₀s_rngs) do ẑ₀, rng
-        pjacobian(fdm, θ₀, ϵ) do θ
+    mean(map(ẑ₀s_rngs) do (ẑ₀, rng)
+        first(pjacobian(fdm, θ₀, step; pmap, update_pbar) do θ
             x, = sample_x_z(prob, copy(rng), θ)
             ẑ = ẑ_at_θ(prob, x, θ₀, ẑ₀)
-            ∇θ_logP(prob, x, θ₀, ẑ)
-        end
-    end
+            ∇θ_logLike(prob, x, θ₀, ẑ)
+        end)
+    end)
 
 end
