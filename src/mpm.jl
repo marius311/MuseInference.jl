@@ -24,19 +24,20 @@ function mpm(
     θ₀;
     rng = copy(Random.default_rng()),
     z₀ = sample_x_z(prob, copy(rng), θ₀).z,
-    nsteps = 5,
+    maxsteps = 50,
+    θ_rtol = 1e-4,
     nsims = 100,
-    α = 0.7,
+    α = 1,
     progress = false,
     map = map,
     regularize = (θ,σθ) -> θ,
     logPrior = θ -> 0,
-    H_like_estimate = nothing
+    H⁻¹_like = nothing
 )
 
-    θ = θ₀
-    local H_post, θunreg
-    history = Any[(;θ)]
+    θunreg = θ = θ₀
+    local H⁻¹_post
+    history = []
     
     _rng = copy(rng)
     xz_sims = [sample_x_z(prob, _rng, θ) for i=1:nsims]
@@ -45,7 +46,7 @@ function mpm(
 
     # set up progress bar
     if progress
-        pbar = Progress(nsteps*(nsims+1), 0.1, "MPM: ")
+        pbar = Progress(maxsteps*(nsims+1), 0.1, "MPM: ")
         ProgressMeter.update!(pbar)
         update_pbar = RemoteChannel(()->Channel{Bool}(), 1)
         @async while take!(update_pbar)
@@ -55,14 +56,14 @@ function mpm(
 
     try
     
-        for i=1:nsteps
+        for i=1:maxsteps
             
             if i>1
                 _rng = copy(rng)
                 xs = [[x]; [sample_x_z(prob, _rng, θ).x for i=1:nsims]]
             end
 
-            # margnal gradient
+            # MPM gradient
             gẑs = map(xs, ẑs) do x, ẑ_prev
                 ẑ = ẑ_at_θ(prob, x, θ, ẑ_prev)
                 g = ∇θ_logLike(prob, x, θ, ẑ)
@@ -75,23 +76,29 @@ function mpm(
             g_prior = _gradient(ForwardDiffAD(), logPrior, θ)
             g_post = g_like .+ g_prior
 
-            # marginal hessian
-            if H_like_estimate == nothing
-                # diagonal hessian approximation based on gradient sims
-                h_like = -var(collect(g_like_sims))
-                H_like = h_like isa Number ? h_like : Diagonal(h_like)
-            else
-                # provided hessian
-                H_like = H_like_estimate
+            # Jacobian
+            if H⁻¹_like == nothing
+                # if no user-provided likelihood Jacobian
+                # approximation, start with a simple diagonal
+                # approximation based on gradient sims
+                h⁻¹_like = -1 ./ var(collect(g_like_sims))
+                H⁻¹_like = h⁻¹_like isa Number ? h⁻¹_like : Diagonal(h⁻¹_like)
+            elseif i>2
+                # on subsequent steps, do a Broyden's update
+                Δθ = history[end].θ - history[end-1].θ
+                norm(Δθ ./ θ) < θ_rtol && break
+                Δg_like = history[end].g_like - history[end-1].g_like
+                H⁻¹_like = H⁻¹_like + ((Δθ - H⁻¹_like * Δg_like) / (Δθ' * H⁻¹_like * Δg_like)) * Δθ' * H⁻¹_like
             end
+
             H_prior = _hessian(ForwardDiffAD(), logPrior, θ)
-            H_post = H_like + H_prior
+            H⁻¹_post = inv(inv(H⁻¹_like) + H_prior)
+
+            push!(history, (;θ, θunreg, g_like_dat, g_like_sims, g_like, g_prior, g_post, H⁻¹_post, H_prior, H⁻¹_like))
 
             # Newton-Rhapson step
-            θunreg = θ .- α .* (H_post \ g_post)
-            θ = regularize(θunreg, H_post)
-
-            push!(history, (;θ, θunreg, g_like_dat, g_like_sims, g_post, H_post, H_prior, H_like))
+            θunreg = θ .- α .* (H⁻¹_post * g_post)
+            θ = regularize(θunreg, H⁻¹_post)
 
         end
 
@@ -101,7 +108,7 @@ function mpm(
 
     end
 
-    θunreg, -inv(H_post), history
+    θunreg, sqrt(-H⁻¹_post), history
 
 end
 
