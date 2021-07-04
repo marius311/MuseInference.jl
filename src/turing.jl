@@ -25,7 +25,7 @@ end
 # right parameter sub-spaces rather than manually indexing into these
 # vectors
 
-function ∇θ_logP(prob::TuringMPMProblem, x, θ, z)
+function ∇θ_logLike(prob::TuringMPMProblem, x, θ, z)
     model = prob.model
     @set! model.args.x = x
     θz = [θ; z]
@@ -33,7 +33,7 @@ function ∇θ_logP(prob::TuringMPMProblem, x, θ, z)
     θ isa Real ? g[1] : g[1:length(θ)]
 end
 
-function logP_and_∇z_logP(prob::TuringMPMProblem, x, θ, z)
+function logLike_and_∇z_logLike(prob::TuringMPMProblem, x, θ, z)
     model = prob.model
     @set! model.args.x = x
     θz = [θ; z]

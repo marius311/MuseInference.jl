@@ -4,6 +4,7 @@ using Base.Iterators: peel
 using Distributed
 using Distributions
 using ForwardDiff
+using LinearAlgebra
 using Optim
 using ProgressMeter
 using Random
