@@ -15,6 +15,7 @@ using Setfield
 export MPMProblem, mpm
 
 include("util.jl")
+include("progress.jl")
 include("mpm.jl")
 include("ad.jl")
 include("manual.jl")

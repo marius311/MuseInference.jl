@@ -4,7 +4,7 @@
 # * specifying the step-size
 # * specificying a map function (like pmap instead)
 # * (parallel-friendly) progress bar
-function pjacobian(f, fdm, x, step; pmap=map, update_pbar=nothing)
+function pjacobian(f, fdm, x, step; pmap=map, pbar=nothing)
     
     x, from_vec = to_vec(x)
     ẏs = pmap(eachindex(x)) do n
@@ -15,7 +15,7 @@ function pjacobian(f, fdm, x, step; pmap=map, update_pbar=nothing)
             x[n] = xn  # Can't do `x[n] -= ϵ` as floating-point math is not associative
             return ret
         end
-        update_pbar==nothing || update_pbar()
+        pbar == nothing || ProgressMeter.next!(pbar)
         return j
     end
 
