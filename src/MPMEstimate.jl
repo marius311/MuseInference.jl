@@ -19,6 +19,7 @@ include("progress.jl")
 include("mpm.jl")
 include("ad.jl")
 include("manual.jl")
+include("rankreduced.jl")
 @init @require Turing="fce5fe82-541a-59a6-adf8-730c64b5f9a0" include("turing.jl")
 
 end
