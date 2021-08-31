@@ -13,6 +13,7 @@ makedocs(
         assets = ["assets/mpmestimate.css"],
         disable_git = true,
     ),
+    checkdocs = :none,
     strict = true,
     modules = [MPMEstimate]
 )
