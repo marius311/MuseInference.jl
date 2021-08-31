@@ -118,7 +118,8 @@ function get_H(
     nsims = 1, 
     step = nothing, 
     pmap = map,
-    progress = true
+    progress = true,
+    skip_errors = false
 )
 
     pbar = progress ? RemoteProgress(nsims*(1+length(θ₀)), 0.1, "get_H: ") : nothing
@@ -138,13 +139,22 @@ function get_H(
     end
 
     # finite difference Jacobian
-    mean(map(ẑ₀s_rngs) do (ẑ₀, rng)
-        first(pjacobian(fdm, θ₀, step; pmap, pbar) do θ
-            x, = sample_x_z(prob, copy(rng), θ)
-            ẑ = ẑ_at_θ(prob, x, θ₀, ẑ₀)
-            ∇θ_logLike(prob, x, θ₀, ẑ)
-        end)
-    end)
+    mean(skipmissing(map(ẑ₀s_rngs) do (ẑ₀, rng)
+        try
+            return first(pjacobian(fdm, θ₀, step; pmap, pbar) do θ
+                x, = sample_x_z(prob, copy(rng), θ)
+                ẑ = ẑ_at_θ(prob, x, θ₀, ẑ₀)
+                ∇θ_logLike(prob, x, θ₀, ẑ)
+            end)
+        catch err
+            if skip_errors && !(err isa InterruptException)
+                @warn err
+                return missing
+            else
+                rethrow(err)
+            end
+        end
+    end))
 
 end
 
@@ -155,7 +165,8 @@ function get_J(
     rng = Random.default_rng(),
     nsims = 1, 
     pmap = map,
-    progress = true
+    progress = true, 
+    skip_errors = false
 )
 
     pbar = progress ? RemoteProgress(nsims, 0.1, "get_J: ") : nothing
@@ -164,12 +175,21 @@ function get_J(
         sample_x_z(prob, rng, θ₀)
     end
 
-    gs = pmap(xzs) do (x, z)
-        ẑ = ẑ_at_θ(prob, x, θ₀, z)
-        g = ∇θ_logLike(prob, x, θ₀, ẑ)
-        progress && ProgressMeter.next!(pbar)
-        g
-    end
+    gs = collect(skipmissing(pmap(xzs) do (x, z)
+        try
+            ẑ = ẑ_at_θ(prob, x, θ₀, z)
+            g = ∇θ_logLike(prob, x, θ₀, ẑ)
+            progress && ProgressMeter.next!(pbar)
+            return g
+        catch err
+            if skip_errors && !(err isa InterruptException)
+                @warn err
+                return missing
+            else
+                rethrow(err)
+            end
+        end
+    end))
 
     cov(gs), gs
 
