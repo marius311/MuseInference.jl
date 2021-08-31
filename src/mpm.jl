@@ -57,11 +57,16 @@ function mpm(
                 xs = [[x]; [sample_x_z(prob, _rng, θ).x for i=1:nsims]]
             end
 
+            if i>2
+                Δθ = history[end].θ - history[end-1].θ
+                norm(Δθ ./ θ) < θ_rtol && break
+            end    
+
             # MPM gradient
             gẑs = map(xs, ẑs) do x, ẑ_prev
                 ẑ = ẑ_at_θ(prob, x, θ, ẑ_prev)
                 g = ∇θ_logLike(prob, x, θ, ẑ)
-                progress == nothing || ProgressMeter.next!(pbar)
+                progress && ProgressMeter.next!(pbar)
                 (;g, ẑ)
             end
             ẑs = getindex.(gẑs, :ẑ)
@@ -80,7 +85,6 @@ function mpm(
             elseif i > 2 && (H⁻¹_update in [:broyden, :diagonal_broyden])
                 # on subsequent steps, do a Broyden's update
                 Δθ = history[end].θ - history[end-1].θ
-                norm(Δθ ./ θ) < θ_rtol && break
                 Δg_like = history[end].g_like - history[end-1].g_like
                 H⁻¹_like = H⁻¹_like + ((Δθ - H⁻¹_like * Δg_like) / (Δθ' * H⁻¹_like * Δg_like)) * Δθ' * H⁻¹_like
                 if H⁻¹_update == :diagonal_broyden
