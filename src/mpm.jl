@@ -123,7 +123,8 @@ function get_H(
     step = nothing, 
     pmap = map,
     progress = true,
-    skip_errors = false
+    skip_errors = false,
+    Hs = []
 )
 
     pbar = progress ? RemoteProgress(nsims*(1+length(θ₀)), 0.1, "get_H: ") : nothing
@@ -143,7 +144,7 @@ function get_H(
     end
 
     # finite difference Jacobian
-    mean(skipmissing(map(ẑ₀s_rngs) do (ẑ₀, rng)
+    append!(Hs, skipmissing(map(ẑ₀s_rngs) do (ẑ₀, rng)
         try
             return first(pjacobian(fdm, θ₀, step; pmap, pbar) do θ
                 x, = sample_x_z(prob, copy(rng), θ)
@@ -160,6 +161,8 @@ function get_H(
         end
     end))
 
+    mean(Hs), Hs
+
 end
 
 
@@ -170,7 +173,8 @@ function get_J(
     nsims = 1, 
     pmap = map,
     progress = true, 
-    skip_errors = false
+    skip_errors = false,
+    gs = []
 )
 
     pbar = progress ? RemoteProgress(nsims, 0.1, "get_J: ") : nothing
@@ -179,7 +183,7 @@ function get_J(
         sample_x_z(prob, rng, θ₀)
     end
 
-    gs = collect(skipmissing(pmap(xzs) do (x, z)
+    append!(gs, skipmissing(pmap(xzs) do (x, z)
         try
             ẑ = ẑ_at_θ(prob, x, θ₀, z)
             g = ∇θ_logLike(prob, x, θ₀, ẑ)
