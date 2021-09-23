@@ -1,6 +1,6 @@
 module MPMEstimate
 
-using Base.Iterators: peel
+using Base.Iterators: peel, repeated
 using Distributed
 using Distributions
 using FiniteDifferences

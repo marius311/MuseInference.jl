@@ -6,17 +6,21 @@ abstract type AbstractMPMProblem end
 
 ## interface to be implemented by specific problem types
 
-function ∇θ_logLike(prob::AbstractMPMProblem, x, θ, z) end
-function logLike_and_∇z_logLike(prob::AbstractMPMProblem, x, θ, z) end
-function sample_x_z(prob::AbstractMPMProblem, rng::AbstractRNG, θ) end
+function ∇θ_logLike end
+function logLike_and_∇z_logLike end
+function sample_x_z end
 
 
-## generic AbstractMPMProblem solution
-
-function ẑ_at_θ(prob::AbstractMPMProblem, x, θ, z₀)
-    soln = optimize(Optim.only_fg(z -> .-logLike_and_∇z_logLike(prob, x, θ, z)), z₀, Optim.LBFGS())
+# this can also be overriden by specific problems
+# the default does LBFGS using the provided logLike_and_∇z_logLike
+function ẑ_at_θ(prob::AbstractMPMProblem, x, θ, z₀; ∇z_logLike_atol)
+    soln = optimize(Optim.only_fg(z -> .-logLike_and_∇z_logLike(prob, x, θ, z)), z₀, Optim.LBFGS(), Optim.Options(g_tol=∇z_logLike_atol))
     soln.minimizer
 end
+
+
+
+### MPM solver
 
 function mpm(
     prob :: AbstractMPMProblem, 
@@ -26,6 +30,7 @@ function mpm(
     z₀ = sample_x_z(prob, copy(rng), θ₀).z,
     maxsteps = 50,
     θ_rtol = 1e-4,
+    ∇z_logLike_atol = 1e-1,
     nsims = 100,
     α = 1,
     progress = false,
@@ -63,8 +68,8 @@ function mpm(
             end    
 
             # MPM gradient
-            gẑs = map(xs, ẑs) do x, ẑ_prev
-                ẑ = ẑ_at_θ(prob, x, θ, ẑ_prev)
+            gẑs = map(xs, ẑs, fill(θ,length(xs))) do x, ẑ_prev, θ
+                ẑ = ẑ_at_θ(prob, x, θ, ẑ_prev; ∇z_logLike_atol)
                 g = ∇θ_logLike(prob, x, θ, ẑ)
                 progress && ProgressMeter.next!(pbar)
                 (;g, ẑ)
@@ -118,10 +123,12 @@ function get_H(
     prob :: AbstractMPMProblem, 
     θ₀, 
     fdm :: FiniteDifferenceMethod = central_fdm(3,1); 
+    ∇z_logLike_atol = 1e-8,
     rng = Random.default_rng(),
     nsims = 1, 
     step = nothing, 
     pmap = map,
+    pmap_over = :jac,
     progress = true,
     skip_errors = false,
     Hs = []
@@ -138,17 +145,18 @@ function get_H(
 
     # initial fit at fiducial, used at starting points for finite difference below
     ẑ₀s_rngs = pmap(xs_zs_rngs) do (x, z, rng)
-        ẑ = ẑ_at_θ(prob, x, θ₀, z)
+        ẑ = ẑ_at_θ(prob, x, θ₀, z; ∇z_logLike_atol)
         progress && ProgressMeter.next!(pbar)
         (ẑ, rng)
     end
 
     # finite difference Jacobian
-    append!(Hs, skipmissing(map(ẑ₀s_rngs) do (ẑ₀, rng)
+    pmap_sims, pmap_jac = (length(θ₀) > nsims) ? (map, pmap) : (pmap, map)
+    append!(Hs, skipmissing(pmap_sims(ẑ₀s_rngs) do (ẑ₀, rng)
         try
-            return first(pjacobian(fdm, θ₀, step; pmap, pbar) do θ
+            return first(pjacobian(fdm, θ₀, step; pmap=pmap_jac, pbar) do θ
                 x, = sample_x_z(prob, copy(rng), θ)
-                ẑ = ẑ_at_θ(prob, x, θ₀, ẑ₀)
+                ẑ = ẑ_at_θ(prob, x, θ₀, ẑ₀; ∇z_logLike_atol)
                 ∇θ_logLike(prob, x, θ₀, ẑ)
             end)
         catch err
@@ -169,6 +177,7 @@ end
 function get_J(
     prob :: AbstractMPMProblem, 
     θ₀; 
+    ∇z_logLike_atol = 1e-1,
     rng = Random.default_rng(),
     nsims = 1, 
     pmap = map,
@@ -185,7 +194,7 @@ function get_J(
 
     append!(gs, skipmissing(pmap(xzs) do (x, z)
         try
-            ẑ = ẑ_at_θ(prob, x, θ₀, z)
+            ẑ = ẑ_at_θ(prob, x, θ₀, z; ∇z_logLike_atol)
             g = ∇θ_logLike(prob, x, θ₀, ẑ)
             progress && ProgressMeter.next!(pbar)
             return g

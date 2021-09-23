@@ -13,13 +13,15 @@ _gradient(::ForwardDiffAD, f, x::Real) = ForwardDiff.derivative(f, x)
 _gradient(::ForwardDiffAD, f, x) = ForwardDiff.gradient(f, x)
 _hessian(::ForwardDiffAD, f, x::Real) = first(ForwardDiff.hessian(f∘first, [x]))
 _hessian(::ForwardDiffAD, f, x) = ForwardDiff.hessian(f, x)
+_jacobian(::ForwardDiffAD, f, x) = ForwardDiff.jacobian(f, x)
 _val_and_gradient(::ForwardDiffAD, f, x) = f(x), _gradient(ForwardDiffAD(), f, x)
 
 # Zygote
 @init @require Zygote="e88e6eb3-aa80-5325-afca-941959d7151f" begin
     function _val_and_gradient(::ZygoteAD, f, x)
-        y, back = pullback(f, x)
-        y, back(sensitivity(y))
+        y, back = Zygote.pullback(f, x)
+        y, Zygote.back(Zygote.sensitivity(y))
     end
+    _jacobian(::ZygoteAD, f, x) = first(Zygote.jacobian(f, x))
 end
 
