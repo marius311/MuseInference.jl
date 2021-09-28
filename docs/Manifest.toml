@@ -486,7 +486,7 @@ git-tree-sha1 = "cafa0e923ce1ae659a4b4cb8eb03c98b916f0d4d"
 uuid = "e80e1ace-859a-464e-9ed9-23947d8ae3ea"
 version = "1.1.0"
 
-[[MPMEstimate]]
+[[MuseEstimate]]
 deps = ["Distributed", "Distributions", "ForwardDiff", "Optim", "ProgressMeter", "Random", "Requires", "Setfield"]
 path = ".."
 uuid = "43b88160-90c7-4f71-933b-9d65205cd921"

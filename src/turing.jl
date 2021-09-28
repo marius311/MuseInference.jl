@@ -4,20 +4,20 @@
 import .Turing
 using .Turing: VarInfo, gradient_logp, SampleFromPrior, DefaultContext
 
-export TuringMPMProblem
+export TuringMuseProblem
 
-struct TuringMPMProblem{M,P} <: AbstractMPMProblem
+struct TuringMuseProblem{M,P} <: AbstractMuseProblem
     model :: M
     model_for_sampling_prior :: P
 end
 
-function TuringMPMProblem(model)
-    TuringMPMProblem(model, @set(model.args = map(_->missing,model.args)))
+function TuringMuseProblem(model)
+    TuringMuseProblem(model, @set(model.args = map(_->missing,model.args)))
 end
 
 
-function mpm(model::Turing.Model, args...; kwargs...)
-    mpm(TuringMPMProblem(model), model.args.x, args...; kwargs...)
+function muse(model::Turing.Model, args...; kwargs...)
+    muse(TuringMuseProblem(model), model.args.x, args...; kwargs...)
 end
 
 
@@ -25,7 +25,7 @@ end
 # right parameter sub-spaces rather than manually indexing into these
 # vectors
 
-function ∇θ_logLike(prob::TuringMPMProblem, x, θ, z)
+function ∇θ_logLike(prob::TuringMuseProblem, x, θ, z)
     model = prob.model
     @set! model.args.x = x
     θz = [θ; z]
@@ -33,7 +33,7 @@ function ∇θ_logLike(prob::TuringMPMProblem, x, θ, z)
     θ isa Real ? g[1] : g[1:length(θ)]
 end
 
-function logLike_and_∇z_logLike(prob::TuringMPMProblem, x, θ, z)
+function logLike_and_∇z_logLike(prob::TuringMuseProblem, x, θ, z)
     model = prob.model
     @set! model.args.x = x
     θz = [θ; z]
@@ -41,7 +41,7 @@ function logLike_and_∇z_logLike(prob::TuringMPMProblem, x, θ, z)
     f, g[length(θ)+1:end]
 end
 
-function sample_x_z(prob::TuringMPMProblem, rng::AbstractRNG, θ)
+function sample_x_z(prob::TuringMuseProblem, rng::AbstractRNG, θ)
     model = prob.model_for_sampling_prior
     @set! model.args.θ = θ
     vi = VarInfo()

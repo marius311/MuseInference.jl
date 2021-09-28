@@ -1,6 +1,6 @@
-name = "MPMEstimate"
+name = "MuseEstimate"
 uuid = "43b88160-90c7-4f71-933b-9d65205cd921"
-authors = ["marius <mariusmillea@gmail.com>"]
+authors = ["Marius Millea <mariusmillea@gmail.com>"]
 version = "0.1.0"
 
 [deps]
