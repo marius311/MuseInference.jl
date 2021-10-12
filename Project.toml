@@ -4,6 +4,7 @@ authors = ["Marius Millea <mariusmillea@gmail.com>"]
 version = "0.1.0"
 
 [deps]
+CovarianceEstimation = "587fd27a-f159-11e8-2dae-1979310e6154"
 Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 FiniteDifferences = "26cc04aa-876d-5657-8c51-4c34ba976000"
@@ -15,3 +16,4 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Requires = "ae029012-a4dd-5104-9daa-d747884805df"
 Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 Setfield = "efcf1570-3423-57d1-acb7-fd33fddbac46"
+UnPack = "3a884ed6-31ef-47d7-9d2a-63182c4928ed"

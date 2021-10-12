@@ -19,10 +19,26 @@ function ẑ_at_θ(prob::AbstractMuseProblem, x, θ, z₀; ∇z_logLike_atol)
 end
 
 
+### MUSE result
+
+Base.@kwdef mutable struct MuseResult
+    θ̂ = nothing
+    σθ = nothing
+    F = nothing
+    history = []
+    H = nothing
+    J = nothing
+    gs = []
+    Hs = []
+end
+
 
 ### MUSE solver
 
-function muse(
+muse(args...; kwargs...) = muse!(MuseResult(), args...; kwargs...)
+
+function muse!(
+    result :: MuseResult,
     prob :: AbstractMuseProblem, 
     x,
     θ₀;
@@ -43,7 +59,7 @@ function muse(
 
     θunreg = θ = θ₀
     local H⁻¹_post
-    history = []
+    history = result.history
     
     _rng = copy(rng)
     xz_sims = [sample_x_z(prob, _rng, θ) for i=1:nsims]
@@ -114,12 +130,14 @@ function muse(
 
     end
 
-    θunreg, sqrt(-H⁻¹_post), history
+    result.θ̂ = θunreg
+    result
 
 end
 
 
-function get_H(
+function get_H!(
+    result :: MuseResult,
     prob :: AbstractMuseProblem, 
     θ₀, 
     fdm :: FiniteDifferenceMethod = central_fdm(3,1); 
@@ -128,16 +146,16 @@ function get_H(
     nsims = 1, 
     step = nothing, 
     pmap = map,
-    pmap_over = :jac,
+    pmap_over = :auto,
     progress = true,
     skip_errors = false,
-    Hs = []
 )
 
-    pbar = progress ? RemoteProgress(nsims*(1+length(θ₀)), 0.1, "get_H: ") : nothing
+    nsims_remaining = nsims - length(result.Hs)
+    pbar = progress ? RemoteProgress(nsims_remaining*(1+length(θ₀)), 0.1, "get_H: ") : nothing
 
     # generate simulation locally, advancing rng, and saving rng state to be reused remotely
-    xs_zs_rngs = map(1:nsims) do i
+    xs_zs_rngs = map(1:nsims_remaining) do i
         _rng = copy(rng)
         (x, z) = sample_x_z(prob, rng, θ₀)
         (x, z, _rng)
@@ -151,8 +169,8 @@ function get_H(
     end
 
     # finite difference Jacobian
-    pmap_sims, pmap_jac = (length(θ₀) > nsims) ? (map, pmap) : (pmap, map)
-    append!(Hs, skipmissing(pmap_sims(ẑ₀s_rngs) do (ẑ₀, rng)
+    pmap_sims, pmap_jac = (pmap_over == :jac || (pmap_over == :auto && length(θ₀) > nsims_remaining)) ? (map, pmap) : (pmap, map)
+    append!(result.Hs, skipmissing(pmap_sims(ẑ₀s_rngs) do (ẑ₀, rng)
         try
             return first(pjacobian(fdm, θ₀, step; pmap=pmap_jac, pbar) do θ
                 x, = sample_x_z(prob, copy(rng), θ)
@@ -169,12 +187,14 @@ function get_H(
         end
     end))
 
-    mean(Hs), Hs
+    result.H = mean(result.Hs)
+    finalize_result!(result)
 
 end
 
 
-function get_J(
+function get_J!(
+    result :: MuseResult,
     prob :: AbstractMuseProblem, 
     θ₀; 
     ∇z_logLike_atol = 1e-1,
@@ -183,16 +203,17 @@ function get_J(
     pmap = map,
     progress = true, 
     skip_errors = false,
-    gs = []
+    covariance_method = LinearShrinkage(target=DiagonalCommonVariance(), shrinkage=:rblw),
 )
 
-    pbar = progress ? RemoteProgress(nsims, 0.1, "get_J: ") : nothing
+    nsims_remaining = nsims - length(result.gs)
+    pbar = progress ? RemoteProgress(nsims_remaining, 0.1, "get_J: ") : nothing
 
-    xzs = map(1:nsims) do i
+    xzs = map(1:nsims_remaining) do i
         sample_x_z(prob, rng, θ₀)
     end
 
-    append!(gs, skipmissing(pmap(xzs) do (x, z)
+    append!(result.gs, skipmissing(pmap(xzs) do (x, z)
         try
             ẑ = ẑ_at_θ(prob, x, θ₀, z; ∇z_logLike_atol)
             g = ∇θ_logLike(prob, x, θ₀, ẑ)
@@ -208,6 +229,17 @@ function get_J(
         end
     end))
 
-    cov(gs), gs
+    result.J = (θ₀ isa Number) ? var(result.gs) : cov(covariance_method, result.gs)
+    finalize_result!(result)
 
+end
+
+
+function finalize_result!(result::MuseResult)
+    @unpack H, J = result
+    if H != nothing && J != nothing
+        result.F = H' * inv(J) * H
+        result.σθ = diag(inv(result.F))
+    end
+    result
 end

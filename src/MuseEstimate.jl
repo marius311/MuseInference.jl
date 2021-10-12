@@ -1,6 +1,7 @@
 module MuseEstimate
 
 using Base.Iterators: peel, repeated
+using CovarianceEstimation
 using Distributed
 using Distributions
 using FiniteDifferences
@@ -11,8 +12,9 @@ using ProgressMeter
 using Random
 using Requires
 using Setfield
+using UnPack
 
-export MuseProblem, muse
+export MuseProblem, MuseResult, muse, muse!, get_J!, get_H!
 
 include("util.jl")
 include("progress.jl")
