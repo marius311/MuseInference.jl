@@ -4,6 +4,7 @@ using Base.Iterators: peel, repeated
 using CovarianceEstimation
 using Distributed
 using Distributions
+using FileIO
 using FiniteDifferences
 using ForwardDiff
 using LinearAlgebra

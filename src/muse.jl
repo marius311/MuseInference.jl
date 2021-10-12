@@ -50,11 +50,13 @@ function muse!(
     nsims = 100,
     α = 1,
     progress = false,
-    map = map,
+    pmap = _map,
+    batch_size = 1,
     regularize = (θ,σθ) -> θ,
     logPrior = θ -> 0,
     H⁻¹_like = nothing,
-    H⁻¹_update = :sims
+    H⁻¹_update = :sims,
+    checkpoint_filename = nothing,
 )
 
     θunreg = θ = θ₀
@@ -67,7 +69,7 @@ function muse!(
     ẑs = [[z₀]; getindex.(xz_sims, :z)]
 
     # set up progress bar
-    pbar = progress ? RemoteProgress(maxsteps*(nsims+1), 0.1, "MUSE: ") : nothing
+    pbar = progress ? RemoteProgress(maxsteps*(nsims+1)÷batch_size, 0.1, "MUSE: ") : nothing
 
     try
     
@@ -84,7 +86,7 @@ function muse!(
             end    
 
             # MUSE gradient
-            gẑs = map(xs, ẑs, fill(θ,length(xs))) do x, ẑ_prev, θ
+            gẑs = pmap(xs, ẑs, fill(θ,length(xs)); batch_size) do x, ẑ_prev, θ
                 ẑ = ẑ_at_θ(prob, x, θ, ẑ_prev; ∇z_logLike_atol)
                 g = ∇θ_logLike(prob, x, θ, ẑ)
                 progress && ProgressMeter.next!(pbar)
@@ -122,6 +124,8 @@ function muse!(
             θunreg = θ .- α .* (H⁻¹_post * g_post)
             θ = regularize(θunreg, H⁻¹_post)
 
+            (checkpoint_filename != nothing) && save(checkpoint_filename, "history", history)
+
         end
 
     finally
@@ -145,14 +149,15 @@ function get_H!(
     rng = Random.default_rng(),
     nsims = 1, 
     step = nothing, 
-    pmap = map,
+    pmap = _map,
+    batch_size = 1,
     pmap_over = :auto,
     progress = true,
     skip_errors = false,
 )
 
     nsims_remaining = nsims - length(result.Hs)
-    pbar = progress ? RemoteProgress(nsims_remaining*(1+length(θ₀)), 0.1, "get_H: ") : nothing
+    pbar = progress ? RemoteProgress(nsims_remaining*(1+length(θ₀))÷batch_size, 0.1, "get_H: ") : nothing
 
     # generate simulation locally, advancing rng, and saving rng state to be reused remotely
     xs_zs_rngs = map(1:nsims_remaining) do i
@@ -162,17 +167,17 @@ function get_H!(
     end
 
     # initial fit at fiducial, used at starting points for finite difference below
-    ẑ₀s_rngs = pmap(xs_zs_rngs) do (x, z, rng)
+    ẑ₀s_rngs = pmap(xs_zs_rngs; batch_size) do (x, z, rng)
         ẑ = ẑ_at_θ(prob, x, θ₀, z; ∇z_logLike_atol)
         progress && ProgressMeter.next!(pbar)
         (ẑ, rng)
     end
 
     # finite difference Jacobian
-    pmap_sims, pmap_jac = (pmap_over == :jac || (pmap_over == :auto && length(θ₀) > nsims_remaining)) ? (map, pmap) : (pmap, map)
-    append!(result.Hs, skipmissing(pmap_sims(ẑ₀s_rngs) do (ẑ₀, rng)
+    pmap_sims, pmap_jac = (pmap_over == :jac || (pmap_over == :auto && length(θ₀) > nsims_remaining)) ? (_map, pmap) : (pmap, _map)
+    append!(Hs, skipmissing(pmap_sims(ẑ₀s_rngs; batch_size) do (ẑ₀, rng)
         try
-            return first(pjacobian(fdm, θ₀, step; pmap=pmap_jac, pbar) do θ
+            return first(pjacobian(fdm, θ₀, step; pmap=pmap_jac, batch_size, pbar) do θ
                 x, = sample_x_z(prob, copy(rng), θ)
                 ẑ = ẑ_at_θ(prob, x, θ₀, ẑ₀; ∇z_logLike_atol)
                 ∇θ_logLike(prob, x, θ₀, ẑ)
@@ -200,20 +205,21 @@ function get_J!(
     ∇z_logLike_atol = 1e-1,
     rng = Random.default_rng(),
     nsims = 100, 
-    pmap = map,
+    pmap = _map,
+    batch_size = 1,
     progress = true, 
     skip_errors = false,
     covariance_method = LinearShrinkage(target=DiagonalCommonVariance(), shrinkage=:rblw),
 )
 
     nsims_remaining = nsims - length(result.gs)
-    pbar = progress ? RemoteProgress(nsims_remaining, 0.1, "get_J: ") : nothing
+    pbar = progress ? RemoteProgress(nsims_remaining÷batch_size, 0.1, "get_J: ") : nothing
 
-    xzs = map(1:nsims_remaining) do i
+    (xs, zs) = map(Base.vect, map(1:nsims_remaining) do i
         sample_x_z(prob, rng, θ₀)
-    end
+    end...)
 
-    append!(result.gs, skipmissing(pmap(xzs) do (x, z)
+    append!(result.gs, skipmissing(pmap(xs, zs, fill(θ₀,length(xs)); batch_size) do x, z, θ₀
         try
             ẑ = ẑ_at_θ(prob, x, θ₀, z; ∇z_logLike_atol)
             g = ∇θ_logLike(prob, x, θ₀, ẑ)
