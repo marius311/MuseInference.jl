@@ -16,9 +16,22 @@ function TuringMuseProblem(model)
 end
 
 
-function muse(model::Turing.Model, args...; kwargs...)
-    muse(TuringMuseProblem(model), model.args.x, args...; kwargs...)
+function muse!(result::MuseResult, model::Turing.Model, θ₀; kwargs...)
+    muse!(result, TuringMuseProblem(model), θ₀; kwargs...)
 end
+
+function muse!(result::MuseResult, prob::TuringMuseProblem, θ₀; kwargs...)
+    muse!(result, prob, prob.model.args.x, θ₀; kwargs...)
+end
+
+function get_J!(result::MuseResult, model::Turing.Model, args...; kwargs...)
+    get_J!(result, TuringMuseProblem(model), args...; kwargs...)
+end
+
+function get_H!(result::MuseResult, model::Turing.Model, args...; kwargs...)
+    get_H!(result, TuringMuseProblem(model), args...; kwargs...)
+end
+
 
 
 # todo: figure out how to use Selector (?) to generically get the

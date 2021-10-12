@@ -22,7 +22,7 @@ end
 ### MUSE result
 
 Base.@kwdef mutable struct MuseResult
-    θ̂ = nothing
+    θ = nothing
     σθ = nothing
     F = nothing
     history = []
@@ -130,7 +130,7 @@ function muse!(
 
     end
 
-    result.θ̂ = θunreg
+    result.θ = θunreg
     result
 
 end
@@ -139,7 +139,7 @@ end
 function get_H!(
     result :: MuseResult,
     prob :: AbstractMuseProblem, 
-    θ₀, 
+    θ₀ = result.θ, 
     fdm :: FiniteDifferenceMethod = central_fdm(3,1); 
     ∇z_logLike_atol = 1e-8,
     rng = Random.default_rng(),
@@ -187,7 +187,7 @@ function get_H!(
         end
     end))
 
-    result.H = mean(result.Hs)
+    result.H = (θ₀ isa Number) ? mean(first.(result.Hs)) :  mean(result.Hs)
     finalize_result!(result)
 
 end
@@ -196,10 +196,10 @@ end
 function get_J!(
     result :: MuseResult,
     prob :: AbstractMuseProblem, 
-    θ₀; 
+    θ₀ = result.θ; 
     ∇z_logLike_atol = 1e-1,
     rng = Random.default_rng(),
-    nsims = 1, 
+    nsims = 100, 
     pmap = map,
     progress = true, 
     skip_errors = false,
@@ -238,8 +238,8 @@ end
 function finalize_result!(result::MuseResult)
     @unpack H, J = result
     if H != nothing && J != nothing
-        result.F = H' * inv(J) * H
-        result.σθ = diag(inv(result.F))
+        result.F = F = H' * inv(J) * H
+        result.σθ = F isa Number ?  sqrt.(1 ./ result.F) : sqrt.(diag(inv(result.F)))
     end
     result
 end

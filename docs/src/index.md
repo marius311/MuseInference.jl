@@ -81,7 +81,9 @@ And we can compute the MUSE estimate for the same problem:
 ```@example 1
 muse(model, 1) # warmup # hide
 Random.seed!(5) # hide
-θ̂, σθ = @time muse(model, 1)
+result = @time muse(model, 1.)
+get_J!(result, model)
+get_H!(result, model)
 nothing # hide
 ```
 
@@ -95,7 +97,7 @@ figure(figsize=(6,5)) # hide
 axvline(1, c="k", ls="--", alpha=0.5)
 hist(collect(chain["θ"][:]), density=true, bins=20, label="HMC")
 θs = range(-1,3,length=1000)
-plot(θs, pdf.(Normal(θ̂, σθ), θs), label="MUSE")
+plot(θs, pdf.(Normal(result.θ, result.σθ), θs), label="MUSE")
 legend()
 xlabel(L"\theta")
 ylabel(L"\mathcal{P}(\theta\,|\,x)")
@@ -157,7 +159,7 @@ And compute the estimate:
 ```@example 1
 muse(prob, x, 1) # warmup # hide
 Random.seed!(5) # hide
-θ̂′, σθ′ = @time muse(prob, x, 1)
+result′ = @time muse(prob, x, 1)
 nothing # hide
 ```
 
@@ -167,8 +169,8 @@ Finally, we can verify that the answer is identical to the answer computed when 
 figure(figsize=(6,5)) # hide
 hist(collect(chain["θ"][:]), density=true, bins=20, label="HMC")
 θs = range(-1,3,length=1000)
-plot(θs, pdf.(Normal(θ̂,  σθ),  θs), label="MUSE (Turing)")
-plot(θs, pdf.(Normal(θ̂′, σθ′), θs), label="MUSE (Manual)", ls="--")
+plot(θs, pdf.(Normal(result.θ,  result.σθ),  θs), label="MUSE (Turing)")
+plot(θs, pdf.(Normal(result′.θ, result′.σθ), θs), label="MUSE (Manual)", ls="--")
 legend()
 xlabel(L"\theta")
 ylabel(L"\mathcal{P}(\theta\,|\,x)")
