@@ -160,6 +160,8 @@ And compute the estimate:
 muse(prob, x, 1) # warmup # hide
 Random.seed!(5) # hide
 result′ = @time muse(prob, x, 1)
+get_J!(result′, model)
+get_H!(result′, model)
 nothing # hide
 ```
 
