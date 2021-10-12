@@ -175,7 +175,7 @@ function get_H!(
 
     # finite difference Jacobian
     pmap_sims, pmap_jac = (pmap_over == :jac || (pmap_over == :auto && length(θ₀) > nsims_remaining)) ? (_map, pmap) : (pmap, _map)
-    append!(Hs, skipmissing(pmap_sims(ẑ₀s_rngs; batch_size) do (ẑ₀, rng)
+    append!(result.Hs, skipmissing(pmap_sims(ẑ₀s_rngs; batch_size) do (ẑ₀, rng)
         try
             return first(pjacobian(fdm, θ₀, step; pmap=pmap_jac, batch_size, pbar) do θ
                 x, = sample_x_z(prob, copy(rng), θ)
@@ -245,7 +245,11 @@ function finalize_result!(result::MuseResult)
     @unpack H, J = result
     if H != nothing && J != nothing
         result.F = F = H' * inv(J) * H
-        result.σθ = F isa Number ?  sqrt.(1 ./ result.F) : sqrt.(diag(inv(result.F)))
+        if F isa Number
+            result.σθ = sqrt.(1 ./ F)
+        else
+            result.σθ = sqrt.(diag(inv(F)))
+        end
     end
     result
 end
