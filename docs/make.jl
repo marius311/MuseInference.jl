@@ -5,21 +5,21 @@ using Pkg
 Pkg.activate(".")
 
 using Documenter
-using MPMEstimate
+using MuseEstimate
 
 makedocs(
-    sitename = "MPMEstimate",
+    sitename = "MuseEstimate",
     format = Documenter.HTML(
-        assets = ["assets/mpmestimate.css"],
+        assets = ["assets/muse.css"],
         disable_git = true,
     ),
     checkdocs = :none,
     strict = true,
-    modules = [MPMEstimate]
+    modules = [MuseEstimate]
 )
 
 deploydocs(
-    repo = "https://github.com/marius311/MPMEstimate.jl",
+    repo = "https://github.com/marius311/MuseEstimate.jl",
     devbranch = "main",
     devurl = "latest",
     push_preview = true,

@@ -1,4 +1,4 @@
-module MPMEstimate
+module MuseEstimate
 
 using Base.Iterators: peel, repeated
 using Distributed
@@ -13,11 +13,11 @@ using Random
 using Requires
 using Setfield
 
-export MPMProblem, mpm
+export MuseProblem, muse
 
 include("util.jl")
 include("progress.jl")
-include("mpm.jl")
+include("muse.jl")
 include("ad.jl")
 include("manual.jl")
 include("rankreduced.jl")

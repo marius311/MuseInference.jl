@@ -1,7 +1,7 @@
 
-### Generic MPM code
+### Generic MUSE code
 
-abstract type AbstractMPMProblem end
+abstract type AbstractMuseProblem end
 
 
 ## interface to be implemented by specific problem types
@@ -13,17 +13,17 @@ function sample_x_z end
 
 # this can also be overriden by specific problems
 # the default does LBFGS using the provided logLike_and_∇z_logLike
-function ẑ_at_θ(prob::AbstractMPMProblem, x, θ, z₀; ∇z_logLike_atol)
+function ẑ_at_θ(prob::AbstractMuseProblem, x, θ, z₀; ∇z_logLike_atol)
     soln = optimize(Optim.only_fg(z -> .-logLike_and_∇z_logLike(prob, x, θ, z)), z₀, Optim.LBFGS(), Optim.Options(g_tol=∇z_logLike_atol))
     soln.minimizer
 end
 
 
 
-### MPM solver
+### MUSE solver
 
-function mpm(
-    prob :: AbstractMPMProblem, 
+function muse(
+    prob :: AbstractMuseProblem, 
     x,
     θ₀;
     rng = copy(Random.default_rng()),
@@ -53,7 +53,7 @@ function mpm(
     ẑs = [[z₀]; getindex.(xz_sims, :z)]
 
     # set up progress bar
-    pbar = progress ? RemoteProgress(maxsteps*(nsims+1)÷batch_size, 0.1, "MPM: ") : nothing
+    pbar = progress ? RemoteProgress(maxsteps*(nsims+1)÷batch_size, 0.1, "MUSE: ") : nothing
 
     try
     
@@ -69,7 +69,7 @@ function mpm(
                 norm(Δθ ./ θ) < θ_rtol && break
             end    
 
-            # MPM gradient
+            # MUSE gradient
             gẑs = pmap(xs, ẑs, fill(θ,length(xs)); batch_size) do x, ẑ_prev, θ
                 ẑ = ẑ_at_θ(prob, x, θ, ẑ_prev; ∇z_logLike_atol)
                 g = ∇θ_logLike(prob, x, θ, ẑ)
@@ -124,7 +124,7 @@ end
 
 
 function get_H(
-    prob :: AbstractMPMProblem, 
+    prob :: AbstractMuseProblem, 
     θ₀, 
     fdm :: FiniteDifferenceMethod = central_fdm(3,1); 
     ∇z_logLike_atol = 1e-8,
@@ -180,7 +180,7 @@ end
 
 
 function get_J(
-    prob :: AbstractMPMProblem, 
+    prob :: AbstractMuseProblem, 
     θ₀; 
     ∇z_logLike_atol = 1e-1,
     rng = Random.default_rng(),
