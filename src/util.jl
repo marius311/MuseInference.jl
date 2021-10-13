@@ -24,3 +24,12 @@ function pjacobian(f, fdm, x, step; pmap=_map, batch_size=1, pbar=nothing)
     return (hcat(ẏs...), )
 
 end
+
+@init @require ComponentArrays="b0b7db55-cfe3-40fc-9ded-d10e2dbeff66" begin
+    using .ComponentArrays
+    function Statistics.cov(method::CovarianceEstimator, vs::AbstractVector{<:ComponentArray})
+        Σ = cov(method, reduce(hcat, vs), dims=2)
+        Axis = getaxes(first(vs))
+        ComponentArray(Σ, (Axis..., Axis...))
+    end
+end

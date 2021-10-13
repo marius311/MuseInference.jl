@@ -235,7 +235,7 @@ function get_J!(
         end
     end))
 
-    result.J = (θ₀ isa Number) ? var(result.gs) : cov(covariance_method, result.gs)
+    result.J = (θ₀ isa Number) ? var(result.gs) : cov(covariance_method, identity.(result.gs))
     finalize_result!(result)
 
 end

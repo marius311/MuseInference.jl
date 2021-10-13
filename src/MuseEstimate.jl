@@ -13,9 +13,10 @@ using ProgressMeter
 using Random
 using Requires
 using Setfield
+using Statistics
 using UnPack
 
-export MuseProblem, MuseResult, muse, muse!, get_J!, get_H!
+export MuseProblem, ReparameterizedMuseProblem, MuseResult, muse, muse!, get_J!, get_H!
 
 include("util.jl")
 include("progress.jl")
