@@ -631,7 +631,7 @@ uuid = "a63ad114-7e13-5084-954f-fe012c677804"
 uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
 
 [[MuseEstimate]]
-deps = ["CovarianceEstimation", "Distributed", "Distributions", "FileIO", "FiniteDifferences", "ForwardDiff", "LinearAlgebra", "Optim", "ProgressMeter", "Random", "Requires", "Serialization", "Setfield", "UnPack"]
+deps = ["CovarianceEstimation", "Distributed", "Distributions", "FileIO", "FiniteDifferences", "ForwardDiff", "LinearAlgebra", "Optim", "ProgressMeter", "Random", "Requires", "Serialization", "Setfield", "Statistics", "UnPack"]
 path = ".."
 uuid = "43b88160-90c7-4f71-933b-9d65205cd921"
 version = "0.1.0"

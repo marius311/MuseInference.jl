@@ -30,6 +30,7 @@ Base.@kwdef mutable struct MuseResult
     J = nothing
     gs = []
     Hs = []
+    rng = nothing
 end
 
 
@@ -41,9 +42,9 @@ function muse!(
     result :: MuseResult,
     prob :: AbstractMuseProblem, 
     x,
-    θ₀;
-    rng = copy(Random.default_rng()),
-    z₀ = sample_x_z(prob, copy(rng), θ₀).z,
+    θ₀ = nothing;
+    rng = nothing,
+    z₀ = nothing,
     maxsteps = 50,
     θ_rtol = 1e-4,
     ∇z_logLike_atol = 1e-1,
@@ -52,38 +53,41 @@ function muse!(
     progress = false,
     pmap = _map,
     batch_size = 1,
-    regularize = (θ,σθ) -> θ,
+    regularize = identity,
     logPrior = θ -> 0,
     H⁻¹_like = nothing,
     H⁻¹_update = :sims,
+    broyden_memory = Inf,
     checkpoint_filename = nothing,
 )
 
-    θunreg = θ = θ₀
+    rng = @something(result.rng, copy(Random.default_rng()))
+    θunreg = θ = θ₀ = @something(result.θ, θ₀)
+    z₀ = @something(z₀, sample_x_z(prob, copy(rng), θ₀).z)
     local H⁻¹_post
     history = result.history
     
-    _rng = copy(rng)
+    result.rng = _rng = copy(rng)
     xz_sims = [sample_x_z(prob, _rng, θ) for i=1:nsims]
     xs = [[x];  getindex.(xz_sims, :x)]
     ẑs = [[z₀]; getindex.(xz_sims, :z)]
 
     # set up progress bar
-    pbar = progress ? RemoteProgress(maxsteps*(nsims+1)÷batch_size, 0.1, "MUSE: ") : nothing
+    pbar = progress ? RemoteProgress((maxsteps-length(result.history))*(nsims+1)÷batch_size, 0.1, "MUSE: ") : nothing
 
     try
     
-        for i=1:maxsteps
+        for i = (length(result.history)+1):maxsteps
             
-            if i>1
+            if i > 1
                 _rng = copy(rng)
                 xs = [[x]; [sample_x_z(prob, _rng, θ).x for i=1:nsims]]
             end
 
-            if i>2
+            if i > 2
                 Δθ = history[end].θ - history[end-1].θ
                 norm(Δθ ./ θ) < θ_rtol && break
-            end    
+            end
 
             # MUSE gradient
             gẑs = pmap(xs, ẑs, fill(θ,length(xs)); batch_size) do x, ẑ_prev, θ
@@ -99,32 +103,35 @@ function muse!(
             g_post = g_like .+ g_prior
 
             # Jacobian
-            if H⁻¹_like == nothing || (i>2 && H⁻¹_update == :sims)
-                # if no user-provided likelihood Jacobian
-                # approximation, start with a simple diagonal
-                # approximation based on gradient sims
-                h⁻¹_like = -1 ./ var(collect(g_like_sims))
-                H⁻¹_like = h⁻¹_like isa Number ? h⁻¹_like : Diagonal(h⁻¹_like)
+            h⁻¹_like_sims = -1 ./ var(collect(g_like_sims))
+            H⁻¹_like_sims = h⁻¹_like_sims isa Number ? h⁻¹_like_sims : Diagonal(h⁻¹_like_sims)
+            if (H⁻¹_like == nothing) || (H⁻¹_update == :sims)
+                H⁻¹_like = H⁻¹_like_sims
             elseif i > 2 && (H⁻¹_update in [:broyden, :diagonal_broyden])
-                # on subsequent steps, do a Broyden's update
-                Δθ = history[end].θ - history[end-1].θ
-                Δg_like = history[end].g_like - history[end-1].g_like
-                H⁻¹_like = H⁻¹_like + ((Δθ - H⁻¹_like * Δg_like) / (Δθ' * H⁻¹_like * Δg_like)) * Δθ' * H⁻¹_like
-                if H⁻¹_update == :diagonal_broyden
-                    H⁻¹_like = Diagonal(H⁻¹_like)
+                # on subsequent steps, do a Broyden's update using at
+                # most the previous `broyden_memory` steps
+                j₀ = Int(max(2, i - broyden_memory))
+                H⁻¹_like = history[j₀-1].H⁻¹_like_sims
+                for j = j₀:i-1
+                    Δθ      = history[j].θ      - history[j-1].θ
+                    Δg_like = history[j].g_like - history[j-1].g_like
+                    H⁻¹_like = H⁻¹_like + ((Δθ - H⁻¹_like * Δg_like) / (Δθ' * H⁻¹_like * Δg_like)) * Δθ' * H⁻¹_like
+                    if H⁻¹_update == :diagonal_broyden
+                        H⁻¹_like = Diagonal(H⁻¹_like)
+                    end
                 end
             end
 
             H_prior = _hessian(ForwardDiffAD(), logPrior, θ)
             H⁻¹_post = inv(inv(H⁻¹_like) + H_prior)
 
-            push!(history, (;θ, θunreg, g_like_dat, g_like_sims, g_like, g_prior, g_post, H⁻¹_post, H_prior, H⁻¹_like))
+            push!(history, (;θ, θunreg, g_like_dat, g_like_sims, g_like, g_prior, g_post, H⁻¹_post, H_prior, H⁻¹_like, H⁻¹_like_sims))
 
             # Newton-Rhapson step
             θunreg = θ .- α .* (H⁻¹_post * g_post)
-            θ = regularize(θunreg, H⁻¹_post)
+            θ = regularize(θunreg)
 
-            (checkpoint_filename != nothing) && save(checkpoint_filename, "history", history)
+            (checkpoint_filename != nothing) && save(checkpoint_filename, "result", result)
 
         end
 

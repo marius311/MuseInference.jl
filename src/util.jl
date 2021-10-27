@@ -1,4 +1,19 @@
 
+if VERSION < v"1.7"
+    macro something(args...)
+        expr = :(nothing)
+        for arg in reverse(args)
+            expr = :(val = $(esc(arg)); val !== nothing ? val : ($expr))
+        end
+        something = GlobalRef(MuseEstimate, :something)
+        return :($something($expr))
+        end
+    something() = throw(ArgumentError("No value arguments present"))
+    something(x::Nothing, y...) = something(y...)
+    something(x::Any, y...) = x
+end
+
+
 _map(args...; _...) = map(args...)
 
 # modified version of https://github.com/JuliaDiff/FiniteDifferences.jl/blob/4d30c4389e06dd2295fd880be57bf58ca8dfc1ce/src/grad.jl#L9

@@ -16,11 +16,11 @@ function TuringMuseProblem(model)
 end
 
 
-function muse!(result::MuseResult, model::Turing.Model, θ₀; kwargs...)
+function muse!(result::MuseResult, model::Turing.Model, θ₀=nothing; kwargs...)
     muse!(result, TuringMuseProblem(model), θ₀; kwargs...)
 end
 
-function muse!(result::MuseResult, prob::TuringMuseProblem, θ₀; kwargs...)
+function muse!(result::MuseResult, prob::TuringMuseProblem, θ₀=nothing; kwargs...)
     muse!(result, prob, prob.model.args.x, θ₀; kwargs...)
 end
 
