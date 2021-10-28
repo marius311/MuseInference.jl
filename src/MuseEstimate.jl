@@ -2,6 +2,7 @@ module MuseEstimate
 
 using Base.Iterators: peel, repeated
 using CovarianceEstimation
+using Dates
 using Distributed
 using Distributions
 using FileIO

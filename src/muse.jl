@@ -15,7 +15,7 @@ function sample_x_z end
 # the default does LBFGS using the provided logLike_and_∇z_logLike
 function ẑ_at_θ(prob::AbstractMuseProblem, x, θ, z₀; ∇z_logLike_atol)
     soln = optimize(Optim.only_fg(z -> .-logLike_and_∇z_logLike(prob, x, θ, z)), z₀, Optim.LBFGS(), Optim.Options(g_tol=∇z_logLike_atol))
-    soln.minimizer
+    soln.minimizer, soln
 end
 
 
@@ -79,6 +79,8 @@ function muse!(
     
         for i = (length(result.history)+1):maxsteps
             
+            t₀ = now()
+
             if i > 1
                 _rng = copy(rng)
                 xs = [[x]; [sample_x_z(prob, _rng, θ).x for i=1:nsims]]
@@ -91,12 +93,13 @@ function muse!(
 
             # MUSE gradient
             gẑs = pmap(xs, ẑs, fill(θ,length(xs)); batch_size) do x, ẑ_prev, θ
-                ẑ = ẑ_at_θ(prob, x, θ, ẑ_prev; ∇z_logLike_atol)
+                local ẑ, history = ẑ_at_θ(prob, x, θ, ẑ_prev; ∇z_logLike_atol)
                 g = ∇θ_logLike(prob, x, θ, ẑ)
                 progress && ProgressMeter.next!(pbar)
-                (;g, ẑ)
+                (;g, ẑ, history)
             end
             ẑs = getindex.(gẑs, :ẑ)
+            ẑ_history_dat, ẑ_history_sims = peel(getindex.(gẑs, :history))
             g_like_dat, g_like_sims = peel(getindex.(gẑs, :g))
             g_like = g_like_dat .- mean(g_like_sims)
             g_prior = _gradient(ForwardDiffAD(), logPrior, θ)
@@ -125,7 +128,14 @@ function muse!(
             H_prior = _hessian(ForwardDiffAD(), logPrior, θ)
             H⁻¹_post = inv(inv(H⁻¹_like) + H_prior)
 
-            push!(history, (;θ, θunreg, g_like_dat, g_like_sims, g_like, g_prior, g_post, H⁻¹_post, H_prior, H⁻¹_like, H⁻¹_like_sims))
+            t = now() - t₀
+            push!(
+                history, 
+                (;θ, θunreg, 
+                g_like_dat, g_like_sims, g_like, g_prior, g_post, 
+                H⁻¹_post, H_prior, H⁻¹_like, H⁻¹_like_sims, 
+                ẑ_history_dat, ẑ_history_sims, t)
+            )
 
             # Newton-Rhapson step
             θunreg = θ .- α .* (H⁻¹_post * g_post)
@@ -186,7 +196,7 @@ function get_H!(
         try
             return first(pjacobian(fdm, θ₀, step; pmap=pmap_jac, batch_size, pbar) do θ
                 x, = sample_x_z(prob, copy(rng), θ)
-                ẑ = ẑ_at_θ(prob, x, θ₀, ẑ₀; ∇z_logLike_atol)
+                ẑ, = ẑ_at_θ(prob, x, θ₀, ẑ₀; ∇z_logLike_atol)
                 ∇θ_logLike(prob, x, θ₀, ẑ)
             end)
         catch err
@@ -228,7 +238,7 @@ function get_J!(
 
     append!(result.gs, skipmissing(pmap(xs, zs, fill(θ₀,length(xs)); batch_size) do x, z, θ₀
         try
-            ẑ = ẑ_at_θ(prob, x, θ₀, z; ∇z_logLike_atol)
+            ẑ, = ẑ_at_θ(prob, x, θ₀, z; ∇z_logLike_atol)
             g = ∇θ_logLike(prob, x, θ₀, ẑ)
             progress && ProgressMeter.next!(pbar)
             return g
