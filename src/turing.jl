@@ -2,63 +2,45 @@
 ### Turing interface
 
 import .Turing
-using .Turing: VarInfo, gradient_logp, SampleFromPrior, DefaultContext
+using .Turing: TypedVarInfo, tonamedtuple, decondition, logprior, logjoint
+using .Turing.DynamicPPL: evaluate!!
 
 export TuringMuseProblem
 
-struct TuringMuseProblem{M,P} <: AbstractMuseProblem
+struct TuringMuseProblem{A<:AD.AbstractBackend, M, MP, X} <: AbstractMuseProblem
+    ad :: A
     model :: M
-    model_for_sampling_prior :: P
-end
-
-function TuringMuseProblem(model)
-    TuringMuseProblem(model, @set(model.args = map(_->missing,model.args)))
-end
-
-
-function muse!(result::MuseResult, model::Turing.Model, θ₀=nothing; kwargs...)
-    muse!(result, TuringMuseProblem(model), θ₀; kwargs...)
-end
-
-function muse!(result::MuseResult, prob::TuringMuseProblem, θ₀=nothing; kwargs...)
-    muse!(result, prob, prob.model.args.x, θ₀; kwargs...)
-end
-
-function get_J!(result::MuseResult, model::Turing.Model, args...; kwargs...)
-    get_J!(result, TuringMuseProblem(model), args...; kwargs...)
-end
-
-function get_H!(result::MuseResult, model::Turing.Model, args...; kwargs...)
-    get_H!(result, TuringMuseProblem(model), args...; kwargs...)
+    model_for_prior :: MP
+    x :: X
+    function TuringMuseProblem(model, ad::A=AD.ForwardDiffBackend()) where {A<:AD.AbstractBackend}
+        x = model.context.values.x
+        model = decondition(model)
+        vars = tonamedtuple(TypedVarInfo(evaluate!!(model)[2]))
+        model_for_prior = model | (x=zero(vars.x[1][1]), z=zero(vars.z[1][1]))
+        new{A, typeof(model), typeof(model_for_prior), typeof(x)}(ad, model, model_for_prior, x)
+    end
 end
 
 
+muse!(result::MuseResult, model::Turing.Model, args...; kwargs...) = muse!(result, TuringMuseProblem(model), args...; kwargs...)
+get_J!(result::MuseResult, model::Turing.Model, args...; kwargs...) = get_J!(result, TuringMuseProblem(model), args...; kwargs...)
+get_H!(result::MuseResult, model::Turing.Model, args...; kwargs...) = get_H!(result, TuringMuseProblem(model), args...; kwargs...)
 
-# todo: figure out how to use Selector (?) to generically get the
-# right parameter sub-spaces rather than manually indexing into these
-# vectors
+
+function logPriorθ(prob::TuringMuseProblem, θ)
+    logprior(prob.model_for_prior, (;θ))
+end
 
 function ∇θ_logLike(prob::TuringMuseProblem, x, θ, z)
-    model = prob.model
-    @set! model.args.x = x
-    θz = [θ; z]
-    _, g = gradient_logp(Turing.ForwardDiffAD{min(length(θz),40)}(), θz, VarInfo(model), model)
-    θ isa Real ? g[1] : g[1:length(θ)]
+    first(AD.gradient(prob.ad, θ -> logjoint(prob.model, (;x, θ, z)), θ))
 end
 
 function logLike_and_∇z_logLike(prob::TuringMuseProblem, x, θ, z)
-    model = prob.model
-    @set! model.args.x = x
-    θz = [θ; z]
-    f, g = gradient_logp(Turing.ForwardDiffAD{min(length(θz),40)}(), θz, VarInfo(model), model)
-    f, g[length(θ)+1:end]
+    first.(AD.value_and_gradient(prob.ad, z -> logjoint(prob.model, (;x, θ, z)), z))
 end
 
 function sample_x_z(prob::TuringMuseProblem, rng::AbstractRNG, θ)
-    model = prob.model_for_sampling_prior
-    @set! model.args.θ = θ
-    vi = VarInfo()
-    x = identity.(model(rng, vi))
-    z = identity.(vi.metadata.vals[1:(end-length(x))]) 
-    (;x, z)
+    model = (prob.model | (;θ))
+    vars = tonamedtuple(TypedVarInfo(evaluate!!(model,rng)[2]))
+    (;x=vars.x[1][1], z=vars.z[1][1])
 end

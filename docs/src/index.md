@@ -31,7 +31,7 @@ The easiest way to use MuseEstimate is with problems defined via the Probabilist
 First, load up the relevant packages:
 
 ```@example 1
-using MuseEstimate, DynamicHMC, Random, Turing, PyPlot
+using MuseEstimate, Random, Turing, PyPlot
 PyPlot.ioff() # hide
 nothing # hide
 ```
@@ -39,15 +39,15 @@ nothing # hide
 As an example, consider the following hierarchical problem, which has the classic [Neal's Funnel](https://mc-stan.org/docs/2_18/stan-users-guide/reparameterization-section.html) problem embedded in it. Neal's funnel is a standard example of a non-Gaussian latent space which HMC struggles to sample efficiently without extra tricks. Specifically, we consider the model defined by:
 
 ```math
-\theta \sim {\rm Uniform(-10,10)} \\ 
+\theta \sim {\rm Normal(0,3)} \\ 
 z_i \sim {\rm Normal}(0,\exp(\theta/2)) \\ 
 x_i \sim {\rm Normal}(z_i, 1)
 ```
 
 where $i=1...50$. This problem can be described by the following Turing model:
 ```@example 1
-@model function funnel(x=missing; θ=missing)
-    θ ~ Uniform(-10, 10)
+@model function funnel()
+    θ ~ Normal(0, 3)
     z ~ MvNormal(zeros(50), exp(θ/2))
     x ~ MvNormal(z, 1)
 end
@@ -60,8 +60,8 @@ Next, lets choose a true value of $\theta=1$ and generate some simulated data:
 
 ```@example 1
 Random.seed!(0)
-x = funnel(θ=1)() # draw sample of `x` to use as simulated data
-model = funnel(x)
+x = funnel()() # draw sample of `x` to use as simulated data
+model = funnel() | (;x)
 nothing # hide
 ```
 
@@ -70,9 +70,9 @@ We can run HMC on the problem to compute an "exact" answer to compare against:
 ```@example 1
 Turing.PROGRESS[] = false # hide
 Random.seed!(1) # hide
-sample(model, DynamicNUTS(), 10); # warmup # hide
+sample(model, NUTS(), 10); # warmup # hide
 Random.seed!(1) # hide
-chain = @time sample(model, DynamicNUTS(), 5000)
+chain = @time sample(model, NUTS(), 5000)
 nothing # hide
 ```
 
@@ -90,7 +90,7 @@ nothing # hide
 For a more careful comparison of the two approaches in terms of the number of model gradient evaluations, see [Millea & Seljak, 2021](http://arxiv.org/inprep), but the timing difference above is indicative of the type of speedups which are possible, and the relative speedup generally increases for higher-dimensional latent spaces. 
 
 
-Finally, we can compare the two estimates, veryfing that in this case, MUSE gives a near exact answer:
+Finally, we can compare the two estimates, verifying that in this case, MUSE gives a near exact answer:
 
 ```@example 1
 figure(figsize=(6,5)) # hide

@@ -9,6 +9,7 @@ abstract type AbstractMuseProblem end
 function ∇θ_logLike end
 function logLike_and_∇z_logLike end
 function sample_x_z end
+logPriorθ(prob::AbstractMuseProblem, θ) = 0
 
 
 # this can also be overriden by specific problems
@@ -41,15 +42,14 @@ muse(args...; kwargs...) = muse!(MuseResult(), args...; kwargs...)
 function muse!(
     result :: MuseResult,
     prob :: AbstractMuseProblem, 
-    x,
     θ₀ = nothing;
     rng = nothing,
     z₀ = nothing,
     maxsteps = 50,
-    θ_rtol = 1e-4,
-    ∇z_logLike_atol = 1e-1,
+    θ_rtol = 1e-1,
+    ∇z_logLike_atol = 1e-2,
     nsims = 100,
-    α = 1,
+    α = 0.7,
     progress = false,
     pmap = _map,
     batch_size = 1,
@@ -61,7 +61,7 @@ function muse!(
     checkpoint_filename = nothing,
 )
 
-    rng = @something(result.rng, copy(Random.default_rng()))
+    rng = @something(rng, result.rng, copy(Random.default_rng()))
     θunreg = θ = θ₀ = @something(result.θ, θ₀)
     z₀ = @something(z₀, sample_x_z(prob, copy(rng), θ₀).z)
     local H⁻¹_post
@@ -69,8 +69,8 @@ function muse!(
     
     result.rng = _rng = copy(rng)
     xz_sims = [sample_x_z(prob, _rng, θ) for i=1:nsims]
-    xs = [[x];  getindex.(xz_sims, :x)]
-    ẑs = [[z₀]; getindex.(xz_sims, :z)]
+    xs = [[prob.x];  getindex.(xz_sims, :x)]
+    ẑs = [[z₀];      getindex.(xz_sims, :z)]
 
     # set up progress bar
     pbar = progress ? RemoteProgress((maxsteps-length(result.history))*(nsims+1)÷batch_size, 0.1, "MUSE: ") : nothing
@@ -83,7 +83,7 @@ function muse!(
 
             if i > 1
                 _rng = copy(rng)
-                xs = [[x]; [sample_x_z(prob, _rng, θ).x for i=1:nsims]]
+                xs = [[prob.x]; [sample_x_z(prob, _rng, θ).x for i=1:nsims]]
             end
 
             if i > 2
@@ -102,7 +102,7 @@ function muse!(
             ẑ_history_dat, ẑ_history_sims = peel(getindex.(gẑs, :history))
             g_like_dat, g_like_sims = peel(getindex.(gẑs, :g))
             g_like = g_like_dat .- mean(g_like_sims)
-            g_prior = _gradient(ForwardDiffAD(), logPrior, θ)
+            g_prior = AD.gradient(AD.ForwardDiffBackend(), θ -> logPriorθ(prob, θ), θ)[1]
             g_post = g_like .+ g_prior
 
             # Jacobian
@@ -125,7 +125,7 @@ function muse!(
                 end
             end
 
-            H_prior = _hessian(ForwardDiffAD(), logPrior, θ)
+            H_prior = AD.hessian(AD.ForwardDiffBackend(), θ -> logPriorθ(prob, θ), θ)[1]
             H⁻¹_post = inv(inv(H⁻¹_like) + H_prior)
 
             t = now() - t₀
@@ -157,6 +157,7 @@ function muse!(
 end
 
 
+
 function get_H!(
     result :: MuseResult,
     prob :: AbstractMuseProblem, 
@@ -164,12 +165,12 @@ function get_H!(
     fdm :: FiniteDifferenceMethod = central_fdm(3,1); 
     ∇z_logLike_atol = 1e-8,
     rng = Random.default_rng(),
-    nsims = 1, 
+    nsims = 10, 
     step = nothing, 
     pmap = _map,
     batch_size = 1,
     pmap_over = :auto,
-    progress = true,
+    progress = false,
     skip_errors = false,
 )
 
@@ -209,9 +210,9 @@ function get_H!(
             end
         end
     end))
-
+ 
     result.H = (θ₀ isa Number) ? mean(first.(result.Hs)) :  mean(result.Hs)
-    finalize_result!(result)
+    finalize_result!(result, prob)
 
 end
 
@@ -225,7 +226,7 @@ function get_J!(
     nsims = 100, 
     pmap = _map,
     batch_size = 1,
-    progress = true, 
+    progress = false, 
     skip_errors = false,
     covariance_method = LinearShrinkage(target=DiagonalCommonVariance(), shrinkage=:rblw),
 )
@@ -255,15 +256,16 @@ function get_J!(
     end))
 
     result.J = (θ₀ isa Number) ? var(result.gs) : cov(covariance_method, identity.(result.gs))
-    finalize_result!(result)
+    finalize_result!(result, prob)
 
 end
 
 
-function finalize_result!(result::MuseResult)
+function finalize_result!(result::MuseResult, prob::AbstractMuseProblem)
     @unpack H, J = result
     if H != nothing && J != nothing
-        result.F = F = H' * inv(J) * H
+        H_prior = -AD.hessian(AD.ForwardDiffBackend(), θ -> logPriorθ(prob, θ), result.θ)[1]
+        result.F = F = H' * inv(J) * H + H_prior
         if F isa Number
             result.σθ = sqrt.(1 ./ F)
         else
