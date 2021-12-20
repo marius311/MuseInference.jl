@@ -40,9 +40,11 @@ nothing # hide
 As an example, consider the following hierarchical problem, which has the classic [Neal's Funnel](https://mc-stan.org/docs/2_18/stan-users-guide/reparameterization-section.html) problem embedded in it. Neal's funnel is a standard example of a non-Gaussian latent space which HMC struggles to sample efficiently without extra tricks. Specifically, we consider the model defined by:
 
 ```math
-\theta \sim {\rm Normal(0,3)} \\ 
-z_i \sim {\rm Normal}(0,\exp(\theta/2)) \\ 
-x_i \sim {\rm Normal}(z_i, 1)
+\begin{aligned}
+\theta &\sim {\rm Normal(0,3)} \\ 
+z_i &\sim {\rm Normal}(0,\exp(\theta/2)) \\ 
+x_i &\sim {\rm Normal}(z_i, 1)
+\end{aligned}
 ```
 
 for $i=1...512$. This problem can be described by the following Turing model:
@@ -128,21 +130,21 @@ It is also possible to use MuseEstimate without Turing. The MUSE estimate requir
    ```
 
    A user-specifiable automatic differentiation library will be used to take gradients of this function. 
-
+    
 3. A function which computes the prior, $\mathcal{P}(\theta)$, with signature:
 
-    ```julia
-    function logPrior(θ)
-        # return log prior
-    end
-    ```
+   ```julia
+   function logPrior(θ)
+       # return log prior
+   end
+   ```
 
-    If none is provided, the prior is assumed uniform. 
+   If none is provided, the prior is assumed uniform. 
 
 
 In all cases, `x`, `z`, and `θ`, can be of any type which supports basic arithmetic, including scalars, `Vector`s, special vector types like `ComponentArray`s, etc...
 
-We can compute the MUSE estimate for the same funnel problem as above. To do so, first we create an `MuseProblem` object which specifies the two functions:
+We can compute the MUSE estimate for the same funnel problem as above. To do so, first we create an `MuseProblem` object which specifies the three functions:
 
 ```@example 1
 prob = MuseProblem(
