@@ -14,8 +14,8 @@ logPriorθ(prob::AbstractMuseProblem, θ) = 0
 
 # this can also be overriden by specific problems
 # the default does LBFGS using the provided logLike_and_∇z_logLike
-function ẑ_at_θ(prob::AbstractMuseProblem, x, θ, z₀; ∇z_logLike_atol)
-    soln = optimize(Optim.only_fg(z -> .-logLike_and_∇z_logLike(prob, x, θ, z)), z₀, Optim.LBFGS(), Optim.Options(g_tol=∇z_logLike_atol))
+function ẑ_at_θ(prob::AbstractMuseProblem, x, z₀, θ; ∇z_logLike_atol)
+    soln = optimize(Optim.only_fg(z -> .-logLike_and_∇z_logLike(prob, x, z, θ)), z₀, Optim.LBFGS(), Optim.Options(g_tol=∇z_logLike_atol))
     soln.minimizer, soln
 end
 
@@ -25,13 +25,15 @@ end
 Base.@kwdef mutable struct MuseResult
     θ = nothing
     σθ = nothing
-    F = nothing
-    history = []
     H = nothing
     J = nothing
+    F = nothing
+    Σ = nothing
+    history = []
     gs = []
     Hs = []
     rng = nothing
+    time = Millisecond(0)
 end
 
 
@@ -59,12 +61,13 @@ function muse!(
     H⁻¹_update = :sims,
     broyden_memory = Inf,
     checkpoint_filename = nothing,
+    get_covariance = false
 )
 
     rng = @something(rng, result.rng, copy(Random.default_rng()))
     θunreg = θ = θ₀ = @something(result.θ, θ₀)
     z₀ = @something(z₀, sample_x_z(prob, copy(rng), θ₀).z)
-    local H⁻¹_post
+    local H⁻¹_post, g_like_sims
     history = result.history
     
     result.rng = _rng = copy(rng)
@@ -93,8 +96,8 @@ function muse!(
 
             # MUSE gradient
             gẑs = pmap(xs, ẑs, fill(θ,length(xs)); batch_size) do x, ẑ_prev, θ
-                local ẑ, history = ẑ_at_θ(prob, x, θ, ẑ_prev; ∇z_logLike_atol)
-                g = ∇θ_logLike(prob, x, θ, ẑ)
+                local ẑ, history = ẑ_at_θ(prob, x, ẑ_prev, θ; ∇z_logLike_atol)
+                g = ∇θ_logLike(prob, x, ẑ, θ)
                 progress && ProgressMeter.next!(pbar)
                 (;g, ẑ, history)
             end
@@ -148,10 +151,16 @@ function muse!(
     finally
 
         progress && ProgressMeter.finish!(pbar)
-
+        
     end
-
+    
+    result.time += sum(getindex.(history,:t))
     result.θ = θunreg
+    result.gs = collect(g_like_sims)
+    if get_covariance
+        get_J!(result, prob)
+        get_H!(result, prob)
+    end
     result
 
 end
@@ -177,6 +186,7 @@ function get_H!(
     nsims_remaining = nsims - length(result.Hs)
     (nsims_remaining <= 0) && return
     pbar = progress ? RemoteProgress(nsims_remaining*(1+length(θ₀))÷batch_size, 0.1, "get_H: ") : nothing
+    t₀ = now()
 
     # generate simulation locally, advancing rng, and saving rng state to be reused remotely
     xs_zs_rngs = map(1:nsims_remaining) do i
@@ -187,7 +197,7 @@ function get_H!(
 
     # initial fit at fiducial, used at starting points for finite difference below
     ẑ₀s_rngs = pmap(xs_zs_rngs; batch_size) do (x, z, rng)
-        ẑ, = ẑ_at_θ(prob, x, θ₀, z; ∇z_logLike_atol)
+        ẑ, = ẑ_at_θ(prob, x, z, θ₀; ∇z_logLike_atol)
         progress && ProgressMeter.next!(pbar)
         (ẑ, rng)
     end
@@ -198,8 +208,8 @@ function get_H!(
         try
             return first(pjacobian(fdm, θ₀, step; pmap=pmap_jac, batch_size, pbar) do θ
                 x, = sample_x_z(prob, copy(rng), θ)
-                ẑ, = ẑ_at_θ(prob, x, θ₀, ẑ₀; ∇z_logLike_atol)
-                ∇θ_logLike(prob, x, θ₀, ẑ)
+                ẑ, = ẑ_at_θ(prob, x, ẑ₀, θ₀; ∇z_logLike_atol)
+                ∇θ_logLike(prob, x, ẑ, θ₀)
             end)
         catch err
             if skip_errors && !(err isa InterruptException)
@@ -212,6 +222,7 @@ function get_H!(
     end))
  
     result.H = (θ₀ isa Number) ? mean(first.(result.Hs)) :  mean(result.Hs)
+    result.time += now() - t₀
     finalize_result!(result, prob)
 
 end
@@ -232,28 +243,32 @@ function get_J!(
 )
 
     nsims_remaining = nsims - length(result.gs)
-    (nsims_remaining <= 0) && return
-    pbar = progress ? RemoteProgress(nsims_remaining÷batch_size, 0.1, "get_J: ") : nothing
 
-    (xs, zs) = map(Base.vect, map(1:nsims_remaining) do i
-        sample_x_z(prob, rng, θ₀)
-    end...)
+    if nsims_remaining > 0
 
-    append!(result.gs, skipmissing(pmap(xs, zs, fill(θ₀,length(xs)); batch_size) do x, z, θ₀
-        try
-            ẑ, = ẑ_at_θ(prob, x, θ₀, z; ∇z_logLike_atol)
-            g = ∇θ_logLike(prob, x, θ₀, ẑ)
-            progress && ProgressMeter.next!(pbar)
-            return g
-        catch err
-            if skip_errors && !(err isa InterruptException)
-                @warn err
-                return missing
-            else
-                rethrow(err)
+        pbar = progress ? RemoteProgress(nsims_remaining÷batch_size, 0.1, "get_J: ") : nothing
+
+        (xs, zs) = map(Base.vect, map(1:nsims_remaining) do i
+            sample_x_z(prob, rng, θ₀)
+        end...)
+
+        append!(result.gs, skipmissing(pmap(xs, zs, fill(θ₀,length(xs)); batch_size) do x, z, θ₀
+            try
+                ẑ, = ẑ_at_θ(prob, x, z, θ₀; ∇z_logLike_atol)
+                g = ∇θ_logLike(prob, x, ẑ, θ₀)
+                progress && ProgressMeter.next!(pbar)
+                return g
+            catch err
+                if skip_errors && !(err isa InterruptException)
+                    @warn err
+                    return missing
+                else
+                    rethrow(err)
+                end
             end
-        end
-    end))
+        end))
+
+    end
 
     result.J = (θ₀ isa Number) ? var(result.gs) : cov(covariance_method, identity.(result.gs))
     finalize_result!(result, prob)
@@ -266,6 +281,7 @@ function finalize_result!(result::MuseResult, prob::AbstractMuseProblem)
     if H != nothing && J != nothing
         H_prior = -AD.hessian(AD.ForwardDiffBackend(), θ -> logPriorθ(prob, θ), result.θ)[1]
         result.F = F = H' * inv(J) * H + H_prior
+        result.Σ = inv(F)
         if F isa Number
             result.σθ = sqrt.(1 ./ F)
         else

@@ -31,12 +31,12 @@ function logPriorθ(prob::TuringMuseProblem, θ)
     logprior(prob.model_for_prior, (;θ))
 end
 
-function ∇θ_logLike(prob::TuringMuseProblem, x, θ, z)
-    first(AD.gradient(prob.ad, θ -> logjoint(prob.model, (;x, θ, z)), θ))
+function ∇θ_logLike(prob::TuringMuseProblem, x, z, θ)
+    first(AD.gradient(prob.ad, θ -> logjoint(prob.model, (;x, z, θ)), θ))
 end
 
-function logLike_and_∇z_logLike(prob::TuringMuseProblem, x, θ, z)
-    first.(AD.value_and_gradient(prob.ad, z -> logjoint(prob.model, (;x, θ, z)), z))
+function logLike_and_∇z_logLike(prob::TuringMuseProblem, x, z, θ)
+    first.(AD.value_and_gradient(prob.ad, z -> logjoint(prob.model, (;x, z, θ)), z))
 end
 
 function sample_x_z(prob::TuringMuseProblem, rng::AbstractRNG, θ)

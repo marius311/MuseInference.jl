@@ -13,13 +13,13 @@ function MuseProblem(x, sample_x_z, logLike, logPriorθ=(θ->0), ad::AD.Abstract
     MuseProblem(
         x,
         sample_x_z,
-        (x,θ,z) -> first(AD.gradient(ad, θ -> logLike(x,θ,z), θ)),
-        (x,θ,z) -> first.(AD.value_and_gradient(ad, z -> logLike(x,θ,z), z)),
+        (x,z,θ) -> first(AD.gradient(ad, θ -> logLike(x,z,θ), θ)),
+        (x,z,θ) -> first.(AD.value_and_gradient(ad, z -> logLike(x,z,θ), z)),
         logPriorθ
     )
 end
 
-∇θ_logLike(prob::MuseProblem, x, θ, z) = prob.∇θ_logLike(x, θ, z)
+∇θ_logLike(prob::MuseProblem, x, z, θ) = prob.∇θ_logLike(x, z, θ)
 logPriorθ(prob::MuseProblem, θ) = prob.logPriorθ(θ)
-logLike_and_∇z_logLike(prob::MuseProblem, x, θ, z) = prob.logLike_and_∇z_logLike(x, θ, z)
+logLike_and_∇z_logLike(prob::MuseProblem, x, z, θ) = prob.logLike_and_∇z_logLike(x, z, θ)
 sample_x_z(prob::MuseProblem, rng::AbstractRNG, θ) = prob.sample_x_z(rng, θ)
