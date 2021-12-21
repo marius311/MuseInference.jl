@@ -101,7 +101,7 @@ t_vi = @time @elapsed vi_result = vi(model, ADVI(10, 1000))
 nothing # hide
 ```
 
-Now lets plot the different estimates. In this case, MUSE gives a nearly perfect answer at ~1/20th the computational cost. MFVI struggles in both speed and accuracy by comparison. 
+Now lets plot the different estimates. In this case, MUSE gives a nearly perfect answer at a fraction of the computational cost. MFVI struggles in both speed and accuracy by comparison.
 
 ```@example 1
 figure(figsize=(6,5)) # hide
