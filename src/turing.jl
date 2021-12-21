@@ -60,7 +60,7 @@ prob = TuringMuseProblem(
 
 The `autodiff` parameter should be either
 `MuseEstimate.ForwardDiffBackend()` or
-``MuseEstimate.ZygoteBackend()`, specifying which library to use for
+`MuseEstimate.ZygoteBackend()`, specifying which library to use for
 automatic differenation. 
 
 """

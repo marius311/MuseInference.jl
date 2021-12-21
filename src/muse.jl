@@ -23,6 +23,28 @@ end
 
 ### MUSE result
 
+@doc doc"""
+
+Stores the result of a MUSE run. Can be constructed by-hand as
+`MuseResult()` and passed to any of the inplace `muse!`, `get_J!`, or
+`get_H!`.
+
+Fields:
+
+* `θ` — The estimate of the $\theta$ parameters. 
+* `Σ, Σ⁻¹` — The approximate covariance of $\theta$ and its inverse. 
+* `H, J` — The $H$ and $J$ matrices which form the covariance (see
+  [Millea & Seljak, 2021](https://arxiv.org/abs/2112.09354))
+* `gs` — The MAP gradient sims used to compute `J`.
+* `Hs` — The jacobian sims used to compute `H`. 
+* `dist` — A `Normal` or `MvNormal` built from `θ` and `Σ`, for
+  convenience. 
+* `history` — Internal diagnostic info from the run. 
+* `rng` — RNG used to generate sims for this run (so the same sims can
+  be reused if resuming later).
+* `time` — Total `Millisecond` wall-time spent computing the result.
+
+"""
 Base.@kwdef mutable struct MuseResult
     θ = nothing
     H = nothing
@@ -47,6 +69,8 @@ end
 
 Run the MUSE estimate. The `muse!` form resumes an existing result. If the 
 `muse` form is used instead, `θ₀` must give a starting guess for $\theta$.
+
+See [`MuseResult`](@ref) for description of return value. 
 
 Optional keyword arguments:
 
