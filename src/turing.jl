@@ -2,7 +2,7 @@
 ### Turing interface
 
 import .Turing
-using .Turing: TypedVarInfo, tonamedtuple, decondition, logprior, logjoint
+using .Turing: TypedVarInfo, tonamedtuple, decondition, logprior, logjoint, VarName
 using .Turing.DynamicPPL: evaluate!!
 
 export TuringMuseProblem
@@ -74,7 +74,7 @@ function TuringMuseProblem(
 
     x = ComponentVector(select(model.context.values, observed_vars))
     model = decondition(model)
-    vars = map(first∘first, tonamedtuple(TypedVarInfo(evaluate!!(model)[2])))
+    vars = _extract_vars(evaluate!!(model)[2])
     model_for_prior = model | map(zero, select(vars, observed_vars)) | map(zero, select(vars, latent_vars))
     TuringMuseProblem(autodiff, model, model_for_prior, x, observed_vars, latent_vars, hyper_vars)
 
@@ -97,10 +97,21 @@ end
 
 function sample_x_z(prob::TuringMuseProblem, rng::AbstractRNG, θ)
     model = (prob.model | NamedTupleView(θ))
-    vars = map(first∘first, tonamedtuple(TypedVarInfo(evaluate!!(model,rng)[2])))
+    vars = _extract_vars(evaluate!!(model,rng)[2])
     (;x=ComponentVector(select(vars, prob.observed_vars)), z=ComponentVector(select(vars, prob.latent_vars)))
 end
 
+# helped to extract parameters from a sampled model. feels like there
+# should be a less hacky way to do this...
+function _extract_vars(vi)
+    map(TypedVarInfo(vi).metadata) do m
+        if m.vns[1] isa VarName{<:Any,Setfield.IdentityLens} && length(m.vals)==1
+            m.vals[1]
+        else
+            m.vals
+        end
+    end
+end
 
 muse!(result::MuseResult, model::Turing.Model, args...; kwargs...) = muse!(result, TuringMuseProblem(model), args...; kwargs...)
 get_J!(result::MuseResult, model::Turing.Model, args...; kwargs...) = get_J!(result, TuringMuseProblem(model), args...; kwargs...)

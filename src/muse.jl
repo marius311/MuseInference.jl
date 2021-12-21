@@ -77,7 +77,7 @@ Optional keyword arguments:
 * `rng` — Random number generator to use. Taken from `result.rng` or `Random.default_rng()` if not passed. 
 * `z₀` — Starting guess for the latent space MAP.
 * `maxsteps = 50` — Maximum number of iterations. 
-* `θ_rtol = 1e-1` — Relative tolerance in terms of its standard deviation for $\theta$.
+* `θ_rtol = 1e-1` — Error tolerance on $\theta$ relative to its standard deviation.
 * `∇z_logLike_atol = 1e-2` — Absolute tolerance on the $z$-gradient at the MAP solution. 
 * `nsims = 100` — Number of simulations. 
 * `α = 0.7` — Step size for root-finder. 

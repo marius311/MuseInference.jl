@@ -34,6 +34,10 @@ First, load up the relevant packages:
 ```@example 1
 using MuseEstimate, Random, Turing, PyPlot, Printf, Dates
 PyPlot.ioff() # hide
+using Logging # hide
+Logging.disable_logging(Logging.Info) # hide
+Turing.AdvancedVI.PROGRESS[] = false # hide
+Turing.PROGRESS[] = false # hide
 nothing # hide
 ```
 
@@ -69,7 +73,6 @@ nothing # hide
 We can run HMC on the problem to compute an "exact" answer to compare against:
 
 ```@example 1
-Turing.PROGRESS[] = false # hide
 Random.seed!(0)
 sample(model, NUTS(10,0.65,init_ϵ=0.5), 10); # warmup # hide
 chain = @time sample(model, NUTS(100,0.65,init_ϵ=0.5), 500)
@@ -87,25 +90,35 @@ Running the MUSE estimate,
 ```@example 1
 muse(model, 0; nsims, get_covariance=true) # warmup # hide
 Random.seed!(5) # hide
-result = @time muse(model, 0; nsims, get_covariance=true)
+muse_result = @time muse(model, 0; nsims, get_covariance=true)
 nothing # hide
 ```
 
-The timing difference is indicative of the speedups that are possible. We expect the speedups get even more drastic as we increase dimensionality. 
+Lets also try mean-field variational inference (MFVI) to compare to another approximate method.
 
-Finally, we can compare the two estimates, verifying that in this case, MUSE gives nearly the perfect answer at ~1/20th the computational cost:
+```@example 1
+t_vi = @time @elapsed vi_result = vi(model, ADVI(10, 1000))
+nothing # hide
+```
+
+Now lets plot the different estimates. In this case, MUSE gives a nearly perfect answer at ~1/20th the computational cost. MFVI struggles in both speed and accuracy by comparison. 
 
 ```@example 1
 figure(figsize=(6,5)) # hide
 axvline(0, c="k", ls="--", alpha=0.5)
 hist(collect(chain["θ"][:]), density=true, bins=15, label=@sprintf("HMC (%.1f seconds)", chain.info.stop_time - chain.info.start_time))
 θs = range(-1,1,length=1000)
-plot(θs, pdf.(result.dist, θs), label=@sprintf("MUSE (%.1f seconds)", (result.time / Millisecond(1000))))
+plot(θs, pdf.(muse_result.dist, θs), label=@sprintf("MUSE (%.1f seconds)", (muse_result.time / Millisecond(1000))))
+plot(θs, pdf.(Normal(vi_result.dist.m[1], vi_result.dist.σ[1]), θs), label=@sprintf("MFVI (%.1f seconds)", t_vi))
 legend()
 xlabel(L"\theta")
 ylabel(L"\mathcal{P}(\theta\,|\,x)")
+title("512-dimensional noisy funnel")
 gcf() # hide
 ```
+
+The timing difference is indicative of the speedups over HMC that are possible. These can get even more dramatic as we increase dimensionality, which is why MUSE really excels on high-dimensional problems.
+
 
 # Usage (manual)
 
@@ -169,12 +182,12 @@ And compute the estimate:
 
 ```@example 1
 Random.seed!(5) # hide
-result_manual = muse(prob, 0; nsims, get_covariance=true)
+muse_result_manual = muse(prob, 0; nsims, get_covariance=true)
 nothing # hide
 ```
 
 This gives the same answer as before:
 
 ```@example 1
-(result.θ[1], result_manual.θ)
+(muse_result.θ[1], muse_result_manual.θ)
 ```
