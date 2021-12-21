@@ -4,8 +4,7 @@ cd(dirname(@__FILE__))
 using Pkg
 Pkg.activate(".")
 
-using Documenter
-using MuseEstimate
+using Documenter, MuseEstimate, Turing
 
 makedocs(
     sitename = "MuseEstimate",

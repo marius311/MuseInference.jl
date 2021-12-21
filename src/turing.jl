@@ -46,7 +46,7 @@ end
 truth = demo()()
 model = demo() | (;truth.x, truth.y)
 prob = TuringMuseProblem(
-    model, observed_vars=[:x,:y], latent_vars=[:z,:w], hyper_vars=[:σ]
+    model, observed_vars=(:x,:y), latent_vars=(:z,:w), hyper_vars=(:σ,)
 )
 ```
 
