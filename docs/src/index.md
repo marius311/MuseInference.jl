@@ -70,6 +70,7 @@ We can run HMC on the problem to compute an "exact" answer to compare against:
 
 ```@example 1
 Turing.PROGRESS[] = false # hide
+Random.seed!(0)
 sample(model, NUTS(10,0.65,init_ϵ=0.5), 10); # warmup # hide
 chain = @time sample(model, NUTS(100,0.65,init_ϵ=0.5), 500)
 nothing # hide
@@ -92,14 +93,14 @@ nothing # hide
 
 The timing difference is indicative of the speedups that are possible. We expect the speedups get even more drastic as we increase dimensionality. 
 
-Finally, we can compare the two estimates, verifying that in this case, MUSE gives nearly the perfect answer at ~20x smaller computational cost:
+Finally, we can compare the two estimates, verifying that in this case, MUSE gives nearly the perfect answer at ~1/20th the computational cost:
 
 ```@example 1
 figure(figsize=(6,5)) # hide
 axvline(0, c="k", ls="--", alpha=0.5)
 hist(collect(chain["θ"][:]), density=true, bins=15, label=@sprintf("HMC (%.1f seconds)", chain.info.stop_time - chain.info.start_time))
 θs = range(-1,1,length=1000)
-plot(θs, pdf.(Normal(result.θ, result.σθ), θs), label=@sprintf("MUSE (%.1f seconds)", (result.time / Millisecond(1000))))
+plot(θs, pdf.(result.dist, θs), label=@sprintf("MUSE (%.1f seconds)", (result.time / Millisecond(1000))))
 legend()
 xlabel(L"\theta")
 ylabel(L"\mathcal{P}(\theta\,|\,x)")
@@ -175,14 +176,5 @@ nothing # hide
 This gives the same answer as before:
 
 ```@example 1
-(result.θ, result_manual.θ)
+(result.θ[1], result_manual.θ)
 ```
-
-
-# Roadmap
-
-* Allow customizable names aside from `x`, `z`, and `θ`. 
-* Allow specification of multiple variables which comprise the latent or hyper parameter space. 
-* Interface to more PPLs, like Gen, Soss, PyMC, Stan, ....
-
-

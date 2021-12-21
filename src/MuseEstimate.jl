@@ -2,6 +2,7 @@ module MuseEstimate
 
 using AbstractDifferentiation
 using Base.Iterators: peel, repeated
+using ComponentArrays
 using CovarianceEstimation
 using Dates
 using Distributed
@@ -10,6 +11,8 @@ using FileIO
 using FiniteDifferences
 using ForwardDiff
 using LinearAlgebra
+using Markdown
+using NamedTupleTools
 using Optim
 using ProgressMeter
 using Random
@@ -18,7 +21,7 @@ using Setfield
 using Statistics
 using UnPack
 
-export MuseProblem, ReparameterizedMuseProblem, MuseResult, muse, muse!, get_J!, get_H!
+export MuseProblem, MuseResult, muse, muse!, get_J!, get_H!
 
 include("util.jl")
 include("ad.jl")

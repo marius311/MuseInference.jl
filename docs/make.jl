@@ -13,6 +13,10 @@ makedocs(
         assets = ["assets/muse.css"],
         disable_git = true,
     ),
+    pages = [
+        "index.md",
+        "api.md",
+    ],
     checkdocs = :none,
     strict = true,
     modules = [MuseEstimate]

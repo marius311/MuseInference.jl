@@ -40,11 +40,39 @@ function pjacobian(f, fdm, x, step; pmap=_map, batch_size=1, pbar=nothing)
 
 end
 
-@init @require ComponentArrays="b0b7db55-cfe3-40fc-9ded-d10e2dbeff66" begin
-    using .ComponentArrays
-    function Statistics.cov(method::CovarianceEstimator, vs::AbstractVector{<:ComponentArray})
-        Σ = cov(method, reduce(hcat, vs), dims=2)
-        Axis = getaxes(first(vs))
-        ComponentArray(Σ, (Axis..., Axis...))
-    end
+
+
+function Statistics.cov(method::CovarianceEstimator, vs::AbstractVector{<:ComponentArray})
+    Σ = cov(method, reduce(hcat, vs), dims=2)
+    Axis = getaxes(first(vs))
+    ComponentArray(Σ, (Axis..., Axis...))
 end
+
+
+# ComponentArray constructor is ridiculousy slow, this type piracy
+# speeds it up for the case that comes up all the time here where the
+# named tuple is not nested
+function ComponentArrays.make_carray_args(nt :: NamedTuple{<:Any,<:NTuple{N,Union{Number,Vector}} where N})
+    i = 1
+    ax = map(nt) do v
+        len = length(v)
+        s = len==1 ? i : i:i+len-1
+        i += len
+        s
+    end
+    vec = reduce(vcat, values(nt))
+    (vec, ComponentArrays.Axis(ax))
+end
+
+function ComponentArrays.make_carray_args(nt :: NamedTuple{<:Any,<:Tuple{Number} where N})
+    ([first(nt)], ComponentArrays.Axis(map(_->1, nt)))
+end
+
+NamedTupleView(nt::NamedTuple) = nt
+function NamedTupleView(cv::ComponentVector)
+    tp = map(k -> getproperty(cv, k), valkeys(cv))
+    unval(::Val{k}) where k = k
+    NamedTuple{map(unval,valkeys(cv))}(tp)
+end
+
+LinearAlgebra.inv(A::ComponentMatrix{<:Real, <:Symmetric}) = ComponentArray(Matrix(inv(getdata(A))), getaxes(A))

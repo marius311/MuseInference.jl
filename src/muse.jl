@@ -10,6 +10,7 @@ function ∇θ_logLike end
 function logLike_and_∇z_logLike end
 function sample_x_z end
 logPriorθ(prob::AbstractMuseProblem, θ) = 0
+standardizeθ(prob::AbstractMuseProblem, θ) = θ
 
 
 # this can also be overriden by specific problems
@@ -24,11 +25,11 @@ end
 
 Base.@kwdef mutable struct MuseResult
     θ = nothing
-    σθ = nothing
     H = nothing
     J = nothing
-    F = nothing
+    Σ⁻¹ = nothing
     Σ = nothing
+    dist = nothing
     history = []
     gs = []
     Hs = []
@@ -39,6 +40,33 @@ end
 
 ### MUSE solver
 
+@doc doc"""
+
+    muse(prob::AbstractMuseProblem, θ₀; kwargs...)
+    muse!(result::MuseResult, prob::AbstractMuseProblem, [θ₀=nothing]; kwargs...)
+
+Run the MUSE estimate. The `muse!` form resumes an existing result. If the 
+`muse` form is used instead, `θ₀` must give a starting guess for $\theta$.
+
+Optional keyword arguments:
+
+* `rng` — Random number generator to use. Taken from `result.rng` or `Random.default_rng()` if not passed. 
+* `z₀` — Starting guess for the latent space MAP.
+* `maxsteps = 50` — Maximum number of iterations. 
+* `θ_rtol = 1e-1` — Relative tolerance in terms of its standard deviation for $\theta$.
+* `∇z_logLike_atol = 1e-2` — Absolute tolerance on the $z$-gradient at the MAP solution. 
+* `nsims = 100` — Number of simulations. 
+* `α = 0.7` — Step size for root-finder. 
+* `progress = false` — Show progress bar.
+* `pmap` — Parallel map function. 
+* `regularize = identity` — Apply some regularization after each step. 
+* `H⁻¹_like = nothing` — Initial guess for the inverse Jacobian of $s^{\rm MUSE}(\theta)$
+* `H⁻¹_update` — How to update `H⁻¹_like`. Should be `:sims`, `:broyden`, or `:diagonal_broyden`. 
+* `broyden_memory = Inf` — How many past steps to keep for Broyden updates. 
+* `checkpoint_filename = nothing` — Save result to a file after each iteration. 
+* `get_covariance = false` — Also call `get_H` and `get_J` to get the full covariance.
+
+"""
 muse(args...; kwargs...) = muse!(MuseResult(), args...; kwargs...)
 
 function muse!(
@@ -56,7 +84,6 @@ function muse!(
     pmap = _map,
     batch_size = 1,
     regularize = identity,
-    logPrior = θ -> 0,
     H⁻¹_like = nothing,
     H⁻¹_update = :sims,
     broyden_memory = Inf,
@@ -65,7 +92,7 @@ function muse!(
 )
 
     rng = @something(rng, result.rng, copy(Random.default_rng()))
-    θunreg = θ = θ₀ = @something(result.θ, θ₀)
+    θunreg = θ = θ₀ = standardizeθ(prob, @something(result.θ, θ₀))
     z₀ = @something(z₀, sample_x_z(prob, copy(rng), θ₀).z)
     local H⁻¹_post, g_like_sims
     history = result.history
@@ -170,8 +197,8 @@ end
 function get_H!(
     result :: MuseResult,
     prob :: AbstractMuseProblem, 
-    θ₀ = result.θ, 
-    fdm :: FiniteDifferenceMethod = central_fdm(3,1); 
+    θ₀ = result.θ;
+    fdm :: FiniteDifferenceMethod = central_fdm(3,1),
     ∇z_logLike_atol = 1e-8,
     rng = Random.default_rng(),
     nsims = 10, 
@@ -183,6 +210,7 @@ function get_H!(
     skip_errors = false,
 )
 
+    θ₀ = standardizeθ(prob, @something(θ₀, result.θ))
     nsims_remaining = nsims - length(result.Hs)
     (nsims_remaining <= 0) && return
     pbar = progress ? RemoteProgress(nsims_remaining*(1+length(θ₀))÷batch_size, 0.1, "get_H: ") : nothing
@@ -231,7 +259,7 @@ end
 function get_J!(
     result :: MuseResult,
     prob :: AbstractMuseProblem, 
-    θ₀ = result.θ; 
+    θ₀ = nothing; 
     ∇z_logLike_atol = 1e-1,
     rng = Random.default_rng(),
     nsims = 100, 
@@ -242,6 +270,7 @@ function get_J!(
     covariance_method = LinearShrinkage(target=DiagonalCommonVariance(), shrinkage=:rblw),
 )
 
+    θ₀ = standardizeθ(prob, @something(θ₀, result.θ))
     nsims_remaining = nsims - length(result.gs)
 
     if nsims_remaining > 0
@@ -280,12 +309,12 @@ function finalize_result!(result::MuseResult, prob::AbstractMuseProblem)
     @unpack H, J = result
     if H != nothing && J != nothing
         H_prior = -AD.hessian(AD.ForwardDiffBackend(), θ -> logPriorθ(prob, θ), result.θ)[1]
-        result.F = F = H' * inv(J) * H + H_prior
-        result.Σ = inv(F)
-        if F isa Number
-            result.σθ = sqrt.(1 ./ F)
+        result.Σ⁻¹ = H' * inv(J) * H + H_prior
+        result.Σ = inv(result.Σ⁻¹)
+        if length(result.θ) == 1
+            result.dist = Normal(result.θ[1], sqrt(result.Σ[1]))
         else
-            result.σθ = sqrt.(diag(inv(F)))
+            result.dist = MvNormal(result.θ, result.Σ)
         end
     end
     result

@@ -169,6 +169,12 @@ version = "3.41.0"
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
 
+[[ComponentArrays]]
+deps = ["ArrayInterface", "ChainRulesCore", "LinearAlgebra", "Requires"]
+git-tree-sha1 = "b83db5b228fc60031628d53a5a50b35714ee8c39"
+uuid = "b0b7db55-cfe3-40fc-9ded-d10e2dbeff66"
+version = "0.11.7"
+
 [[CompositionsBase]]
 git-tree-sha1 = "455419f7e328a1a2493cabc6428d79e951349769"
 uuid = "a33af91c-f02d-484b-be07-31d278c5ca2b"
@@ -595,7 +601,7 @@ uuid = "a63ad114-7e13-5084-954f-fe012c677804"
 uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
 
 [[MuseEstimate]]
-deps = ["AbstractDifferentiation", "CovarianceEstimation", "Dates", "Distributed", "Distributions", "FileIO", "FiniteDifferences", "ForwardDiff", "LinearAlgebra", "Optim", "ProgressMeter", "Random", "Requires", "Serialization", "Setfield", "Statistics", "UnPack"]
+deps = ["AbstractDifferentiation", "ComponentArrays", "CovarianceEstimation", "Dates", "Distributed", "Distributions", "FileIO", "FiniteDifferences", "ForwardDiff", "LinearAlgebra", "Markdown", "NamedTupleTools", "Optim", "ProgressMeter", "Random", "Requires", "Serialization", "Setfield", "Statistics", "UnPack"]
 path = ".."
 uuid = "43b88160-90c7-4f71-933b-9d65205cd921"
 version = "0.1.0"
@@ -622,6 +628,11 @@ deps = ["Combinatorics", "DataStructures", "DelimitedFiles", "InvertedIndices", 
 git-tree-sha1 = "2fd5787125d1a93fbe30961bd841707b8a80d75b"
 uuid = "86f7a689-2022-50b4-a561-43c23ac3c673"
 version = "0.9.6"
+
+[[NamedTupleTools]]
+git-tree-sha1 = "63831dcea5e11db1c0925efe5ef5fc01d528c522"
+uuid = "d9ec5142-1e00-5aa0-9d6a-321866360f50"
+version = "0.13.7"
 
 [[NaturalSort]]
 git-tree-sha1 = "eda490d06b9f7c00752ee81cfa451efe55521e21"
