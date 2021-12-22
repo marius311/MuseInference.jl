@@ -1,8 +1,8 @@
-# MuseEstimate.jl
+# MuseInference.jl
 
-[![](https://img.shields.io/badge/documentation-latest-blue.svg)](https://cosmicmar.com/MuseEstimate.jl/latest) [![](https://img.shields.io/badge/source-github-blue)](https://github.com/marius311/MuseEstimate.jl)
+[![](https://img.shields.io/badge/documentation-latest-blue.svg)](https://cosmicmar.com/MuseInference.jl/latest) [![](https://img.shields.io/badge/source-github-blue)](https://github.com/marius311/MuseInference.jl)
 
-[![](https://github.com/marius311/MuseEstimate.jl/actions/workflows/docs.yml/badge.svg)](https://github.com/marius311/MuseEstimate.jl/actions/workflows/docs.yml)
+[![](https://github.com/marius311/MuseInference.jl/actions/workflows/docs.yml/badge.svg)](https://github.com/marius311/MuseInference.jl/actions/workflows/docs.yml)
 
 The Marginal Unbiased Score Expansion (MUSE) method is a generic tool for hierarchical Bayesian inference. MUSE performs approximate marginalization over arbitrary non-Gaussian and high-dimensional latent spaces, providing Gaussianized constraints on hyper parameters of interest. It is much faster than exact methods like Hamiltonian Monte Carlo (HMC), and requires no user input like many Variational Inference (VI), and Likelihood-Free Inference (LFI) or Simulation-Based Inference (SBI) methods. It excels in high-dimensions, which challenge these other methods. It is approximate, so its results may need to be spot-checked against exact methods, but it is itself exact in asymptotic limit of a large number of data modes contributing to each hyperparameter, or in the limit of Gaussian joint likelihood regardless the number of data modes. For more details, see [Millea & Seljak, 2021](https://arxiv.org/abs/2112.09354).
 
@@ -19,20 +19,20 @@ The only requirements to run MUSE on a particular problem are that forward simul
 
 # Install
 
-MuseEstimate.jl is a Julia package for computing the MUSE estimate. To install it, run the following from the Julia package prompt:
+MuseInference.jl is a Julia package for computing the MUSE estimate. To install it, run the following from the Julia package prompt:
 
 ```
-pkg> add https://github.com/marius311/MuseEstimate.jl
+pkg> add https://github.com/marius311/MuseInference.jl
 ```
 
 # Usage (with Turing.jl)
 
-The easiest way to use MuseEstimate is with problems defined via the Probabilistic Programming Language, [Turing.jl](https://turing.ml/stable/).
+The easiest way to use MuseInference is with problems defined via the Probabilistic Programming Language, [Turing.jl](https://turing.ml/stable/).
 
 First, load up the relevant packages:
 
 ```@example 1
-using MuseEstimate, Random, Turing, PyPlot, Printf, Dates
+using MuseInference, Random, Turing, PyPlot, Printf, Dates
 PyPlot.ioff() # hide
 using Logging # hide
 Logging.disable_logging(Logging.Info) # hide
@@ -122,7 +122,7 @@ The timing difference is indicative of the speedups over HMC that are possible. 
 
 # Usage (manual)
 
-It is also possible to use MuseEstimate without Turing. The MUSE estimate requires three things:
+It is also possible to use MuseInference without Turing. The MUSE estimate requires three things:
 
 1. A function which samples from the joint likelihood, $\mathcal{P}(x,z\,|\,\theta)$, with signature:
 

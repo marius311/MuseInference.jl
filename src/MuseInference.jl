@@ -1,4 +1,4 @@
-module MuseEstimate
+module MuseInference
 
 using AbstractDifferentiation
 using Base.Iterators: peel, repeated

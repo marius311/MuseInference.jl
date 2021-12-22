@@ -25,7 +25,7 @@ end
     TuringMuseProblem(
         model;
         observed_vars=(:x,), latent_vars=(:z,), hyper_vars=(:θ,), 
-        autodiff=MuseEstimate.ForwardDiffBackend()
+        autodiff=MuseInference.ForwardDiffBackend()
     )
 
 Wrap a Turing model to be ready to pass to [`muse`](@ref). 
@@ -52,15 +52,15 @@ prob = TuringMuseProblem(
 
 !!! note
 
-    When defining Turing models to be used with MuseEstimate, the new-style definition 
+    When defining Turing models to be used with MuseInference, the new-style definition 
     of Turing models is required, where the random variables do not appear as arguments 
-    to the function. This is because internally, MuseEstimate needs
+    to the function. This is because internally, MuseInference needs
     to [`condition`](https://turinglang.github.io/DynamicPPL.jl/stable/#AbstractPPL.condition-Tuple{Model}) 
     your model on various variables.
 
 The `autodiff` parameter should be either
-`MuseEstimate.ForwardDiffBackend()` or
-`MuseEstimate.ZygoteBackend()`, specifying which library to use for
+`MuseInference.ForwardDiffBackend()` or
+`MuseInference.ZygoteBackend()`, specifying which library to use for
 automatic differenation. 
 
 """

@@ -4,10 +4,10 @@ cd(dirname(@__FILE__))
 using Pkg
 Pkg.activate(".")
 
-using Documenter, MuseEstimate, Turing
+using Documenter, MuseInference, Turing
 
 makedocs(
-    sitename = "MuseEstimate",
+    sitename = "MuseInference",
     format = Documenter.HTML(
         assets = ["assets/muse.css"],
         disable_git = true,
@@ -18,11 +18,11 @@ makedocs(
     ],
     checkdocs = :none,
     strict = true,
-    modules = [MuseEstimate]
+    modules = [MuseInference]
 )
 
 deploydocs(
-    repo = "https://github.com/marius311/MuseEstimate.jl",
+    repo = "https://github.com/marius311/MuseInference.jl",
     devbranch = "main",
     devurl = "latest",
     push_preview = true,

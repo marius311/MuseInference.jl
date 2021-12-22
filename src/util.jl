@@ -5,7 +5,7 @@ if VERSION < v"1.7"
         for arg in reverse(args)
             expr = :(val = $(esc(arg)); val !== nothing ? val : ($expr))
         end
-        something = GlobalRef(MuseEstimate, :something)
+        something = GlobalRef(MuseInference, :something)
         return :($something($expr))
         end
     something() = throw(ArgumentError("No value arguments present"))
