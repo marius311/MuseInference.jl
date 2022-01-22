@@ -142,7 +142,7 @@ function muse!(
 
             if i > 2
                 Δθ = history[end].θ - history[end-1].θ
-                norm(Δθ ./ θ) < θ_rtol && break
+                sqrt(-(Δθ' * H⁻¹_post * Δθ)) < θ_rtol && break
             end
 
             # MUSE gradient
