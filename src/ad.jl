@@ -12,6 +12,7 @@ end
 # Zygote not yet in AutomaticDifferentiation, but remove this once it is
 @init @require Zygote="e88e6eb3-aa80-5325-afca-941959d7151f" begin
     struct ZygoteBackend <: AD.AbstractBackend end
+    AD.gradient(ad::ZygoteBackend, f, x::Real) = first(Zygote.gradient(f, x))
     AD.gradient(ad::ZygoteBackend, f, x) = Zygote.gradient(f, x)
     function AD.value_and_gradient(::ZygoteBackend, f, x)
         y, back = Zygote.pullback(f, x)
