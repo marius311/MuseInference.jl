@@ -232,6 +232,7 @@ function get_H!(
     pmap_over = :auto,
     progress = false,
     skip_errors = false,
+    z₀ = nothing
 )
 
     θ₀ = standardizeθ(prob, @something(θ₀, result.θ))
@@ -241,15 +242,15 @@ function get_H!(
     t₀ = now()
 
     # generate simulation locally, advancing rng, and saving rng state to be reused remotely
-    xs_zs_rngs = map(1:nsims_remaining) do i
+    xs_ẑ₀s_rngs = map(1:nsims_remaining) do i
         _rng = copy(rng)
         (x, z) = sample_x_z(prob, rng, θ₀)
-        (x, z, _rng)
+        (x, @something(z₀, z), _rng)
     end
 
     # initial fit at fiducial, used at starting points for finite difference below
-    ẑ₀s_rngs = pmap(xs_zs_rngs; batch_size) do (x, z, rng)
-        ẑ, = ẑ_at_θ(prob, x, z, θ₀; ∇z_logLike_atol)
+    ẑ₀s_rngs = pmap(xs_ẑ₀s_rngs; batch_size) do (x, ẑ₀, rng)
+        ẑ, = ẑ_at_θ(prob, x, ẑ₀, θ₀; ∇z_logLike_atol)
         progress && ProgressMeter.next!(pbar)
         (ẑ, rng)
     end
@@ -284,6 +285,7 @@ function get_J!(
     result :: MuseResult,
     prob :: AbstractMuseProblem, 
     θ₀ = nothing; 
+    z₀ = nothing,
     ∇z_logLike_atol = 1e-1,
     rng = Random.default_rng(),
     nsims = 100, 
@@ -302,7 +304,8 @@ function get_J!(
         pbar = progress ? RemoteProgress(nsims_remaining÷batch_size, 0.1, "get_J: ") : nothing
 
         (xs, zs) = map(Base.vect, map(1:nsims_remaining) do i
-            sample_x_z(prob, rng, θ₀)
+            (x, z) = sample_x_z(prob, rng, θ₀)
+            (x, @something(z₀, z))
         end...)
 
         append!(result.gs, skipmissing(pmap(xs, zs, fill(θ₀,length(xs)); batch_size) do x, z, θ₀
@@ -330,10 +333,10 @@ end
 
 
 function finalize_result!(result::MuseResult, prob::AbstractMuseProblem)
-    @unpack H, J = result
-    if H != nothing && J != nothing
+    @unpack H, J, θ = result
+    if H != nothing && J != nothing && θ != nothing
         H_prior = -AD.hessian(AD.ForwardDiffBackend(), θ -> logPriorθ(prob, θ), result.θ)[1]
-        result.Σ⁻¹ = H' * inv(J) * H + H_prior
+        result.Σ⁻¹ = Symmetric(H' * inv(J) * H + H_prior)
         result.Σ = inv(result.Σ⁻¹)
         if length(result.θ) == 1
             result.dist = Normal(result.θ[1], sqrt(result.Σ[1]))
