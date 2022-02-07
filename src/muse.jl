@@ -338,7 +338,7 @@ function finalize_result!(result::MuseResult, prob::AbstractMuseProblem)
     @unpack H, J, θ = result
     if H != nothing && J != nothing && θ != nothing
         𝟘 = zero(J) # if θ::ComponentArray, helps keep component labels 
-        H_prior = @show -AD.hessian(AD.ForwardDiffBackend(), θ -> logPriorθ(prob, θ), result.θ)[1]
+        H_prior = -AD.hessian(AD.ForwardDiffBackend(), θ -> logPriorθ(prob, θ), result.θ)[1]
         result.Σ⁻¹ = H' * inv(J) * H + H_prior + 𝟘
         result.Σ = inv(result.Σ⁻¹) + 𝟘
         if length(result.θ) == 1
