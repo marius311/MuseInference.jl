@@ -115,16 +115,18 @@ function muse!(
     get_covariance = false
 )
 
-    rng = @something(rng, result.rng, copy(Random.default_rng()))
+    result.rng = rng = @something(rng, result.rng, copy(Random.default_rng()))
     θunreg = θ = θ₀ = standardizeθ(prob, @something(result.θ, θ₀))
-    z₀ = @something(z₀, sample_x_z(prob, copy(rng), θ₀).z)
     local H⁻¹_post, g_like_sims
     history = result.history
     
-    result.rng = _rng = copy(rng)
-    xz_sims = [sample_x_z(prob, _rng, θ) for i=1:nsims]
-    xs = [[prob.x];  getindex.(xz_sims, :x)]
-    ẑs = [[z₀];      getindex.(xz_sims, :z)]
+    _rng = copy(rng)
+    xs_ẑs_sims = map(1:nsims) do i
+        (x, z) = sample_x_z(prob, _rng, θ)
+        (x, @something(z₀, z))
+    end
+    xs = [[prob.x];                                      first.(xs_ẑs_sims)]
+    ẑs = [[@something(z₀, sample_x_z(prob, _rng, θ).z)]; last.(xs_ẑs_sims)]
 
     # set up progress bar
     pbar = progress ? RemoteProgress((maxsteps-length(result.history))*(nsims+1)÷batch_size, 0.1, "MUSE: ") : nothing
@@ -303,14 +305,14 @@ function get_J!(
 
         pbar = progress ? RemoteProgress(nsims_remaining÷batch_size, 0.1, "get_J: ") : nothing
 
-        (xs, zs) = map(Base.vect, map(1:nsims_remaining) do i
+        xs_z₀s = map(1:nsims_remaining) do i
             (x, z) = sample_x_z(prob, rng, θ₀)
             (x, @something(z₀, z))
-        end...)
+        end
 
-        append!(result.gs, skipmissing(pmap(xs, zs, fill(θ₀,length(xs)); batch_size) do x, z, θ₀
+        append!(result.gs, skipmissing(pmap(xs_z₀s, fill(θ₀,nsims_remaining); batch_size) do (x, z₀), θ₀
             try
-                ẑ, = ẑ_at_θ(prob, x, z, θ₀; ∇z_logLike_atol)
+                ẑ, = ẑ_at_θ(prob, x, z₀, θ₀; ∇z_logLike_atol)
                 g = ∇θ_logLike(prob, x, ẑ, θ₀)
                 progress && ProgressMeter.next!(pbar)
                 return g
