@@ -41,14 +41,6 @@ function pjacobian(f, fdm, x, step; pmap=_map, batch_size=1, pbar=nothing)
 end
 
 
-
-function Statistics.cov(method::CovarianceEstimator, vs::AbstractVector{<:ComponentArray})
-    Σ = cov(method, reduce(hcat, vs), dims=2)
-    Axis = getaxes(first(vs))
-    ComponentArray(Σ, (Axis..., Axis...))
-end
-
-
 # ComponentArray constructor is ridiculousy slow, this type piracy
 # speeds it up for the case that comes up all the time here where the
 # named tuple is not nested

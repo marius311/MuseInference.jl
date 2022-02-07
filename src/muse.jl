@@ -117,7 +117,6 @@ function muse!(
 
     result.rng = rng = @something(rng, result.rng, copy(Random.default_rng()))
     θunreg = θ = θ₀ = standardizeθ(prob, @something(result.θ, θ₀))
-    local H⁻¹_post, g_like_sims
     history = result.history
     
     _rng = copy(rng)
@@ -144,7 +143,7 @@ function muse!(
 
             if i > 2
                 Δθ = history[end].θ - history[end-1].θ
-                sqrt(-(Δθ' * H⁻¹_post * Δθ)) < θ_rtol && break
+                sqrt(-(Δθ' * history[end].H⁻¹_post * Δθ)) < θ_rtol && break
             end
 
             # MUSE gradient
@@ -209,7 +208,7 @@ function muse!(
     
     result.time += sum(getindex.(history,:t))
     result.θ = θunreg
-    result.gs = collect(g_like_sims)
+    result.gs = collect(history[end].g_like_sims)
     if get_covariance
         get_J!(result, prob)
         get_H!(result, prob)
@@ -238,6 +237,7 @@ function get_H!(
 )
 
     θ₀ = standardizeθ(prob, @something(θ₀, result.θ))
+    𝟘 = zero(θ₀) * zero(θ₀)' # if θ::ComponentArray, helps keep component labels 
     nsims_remaining = nsims - length(result.Hs)
     (nsims_remaining <= 0) && return
     pbar = progress ? RemoteProgress(nsims_remaining*(1+length(θ₀))÷batch_size, 0.1, "get_H: ") : nothing
@@ -276,7 +276,7 @@ function get_H!(
         end
     end))
  
-    result.H = (θ₀ isa Number) ? mean(first.(result.Hs)) :  mean(result.Hs)
+    result.H = (θ₀ isa Number) ? mean(first.(result.Hs)) : (mean(result.Hs) .+ 𝟘)
     result.time += now() - t₀
     finalize_result!(result, prob)
 
@@ -295,7 +295,7 @@ function get_J!(
     batch_size = 1,
     progress = false, 
     skip_errors = false,
-    covariance_method = LinearShrinkage(target=DiagonalCommonVariance(), shrinkage=:rblw),
+    covariance_method = SimpleCovariance(corrected=true),
 )
 
     θ₀ = standardizeθ(prob, @something(θ₀, result.θ))
@@ -337,13 +337,14 @@ end
 function finalize_result!(result::MuseResult, prob::AbstractMuseProblem)
     @unpack H, J, θ = result
     if H != nothing && J != nothing && θ != nothing
-        H_prior = -AD.hessian(AD.ForwardDiffBackend(), θ -> logPriorθ(prob, θ), result.θ)[1]
-        result.Σ⁻¹ = Symmetric(H' * inv(J) * H + H_prior)
-        result.Σ = inv(result.Σ⁻¹)
+        𝟘 = zero(J) # if θ::ComponentArray, helps keep component labels 
+        H_prior = @show -AD.hessian(AD.ForwardDiffBackend(), θ -> logPriorθ(prob, θ), result.θ)[1]
+        result.Σ⁻¹ = H' * inv(J) * H + H_prior + 𝟘
+        result.Σ = inv(result.Σ⁻¹) + 𝟘
         if length(result.θ) == 1
             result.dist = Normal(result.θ[1], sqrt(result.Σ[1]))
         else
-            result.dist = MvNormal(result.θ, result.Σ)
+            result.dist = MvNormal(result.θ, Symmetric(Array(result.Σ)))
         end
     end
     result
