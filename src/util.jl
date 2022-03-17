@@ -24,7 +24,7 @@ _map(args...; _...) = map(args...)
 function pjacobian(f, fdm, x, step; pmap=_map, batch_size=1, pbar=nothing)
     
     x, from_vec = to_vec(x)
-    ẏs = pmap(eachindex(x); batch_size) do n
+    ẏs = pmap(tuple.(eachindex(x),step); batch_size) do (n, step)
         j = fdm(zero(eltype(x)), (step==nothing ? () : step)...) do ε
             xn = x[n]
             x[n] = xn + ε

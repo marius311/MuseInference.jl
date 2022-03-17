@@ -243,6 +243,11 @@ function get_H!(
     pbar = progress ? RemoteProgress(nsims_remaining*(1+length(θ₀))÷batch_size, 0.1, "get_H: ") : nothing
     t₀ = now()
 
+    # default to step size of 0.1σ with σ roughly estimated from J matrix, if we have it
+    if step == nothing && result.J != nothing
+        step = 0.1 ./ sqrt.(diag(result.J))
+    end
+
     # generate simulation locally, advancing rng, and saving rng state to be reused remotely
     xs_ẑ₀s_rngs = map(1:nsims_remaining) do i
         _rng = copy(rng)
@@ -250,7 +255,7 @@ function get_H!(
         (x, @something(z₀, z), _rng)
     end
 
-    # initial fit at fiducial, used at starting points for finite difference below
+    # initial fit at fiducial, used as starting points for finite difference below
     ẑ₀s_rngs = pmap(xs_ẑ₀s_rngs; batch_size) do (x, ẑ₀, rng)
         ẑ, = ẑ_at_θ(prob, x, ẑ₀, θ₀; ∇z_logLike_atol)
         progress && ProgressMeter.next!(pbar)
