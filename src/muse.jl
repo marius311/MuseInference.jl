@@ -243,9 +243,10 @@ function get_H!(
     pbar = progress ? RemoteProgress(nsims_remaining*(1+length(θ₀))÷batch_size, 0.1, "get_H: ") : nothing
     t₀ = now()
 
-    # default to step size of 0.1σ with σ roughly estimated from J matrix, if we have it
-    if step == nothing && result.J != nothing
-        step = 0.1 ./ sqrt.(diag(result.J))
+    # default to finite difference step size of 0.1σ with σ roughly
+    # estimated from g sims, if we have them
+    if step == nothing && !isempty(result.gs)
+        step = 0.1 ./ std(result.gs)
     end
 
     # generate simulation locally, advancing rng, and saving rng state to be reused remotely
