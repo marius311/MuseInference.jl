@@ -19,3 +19,16 @@ end
         y, back(Zygote.sensitivity(y))
     end
 end
+
+function optim_only_fg!(func, autodiff)
+    Optim.only_fg!() do F, G, z
+        if G != nothing
+            f, g = AD.value_and_gradient(autodiff, func, z)
+            G .= first(g)
+            return f
+        end
+        if F != nothing
+            return neglogp(z)
+        end
+    end
+end

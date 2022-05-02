@@ -60,8 +60,8 @@ function ComponentArrays.make_carray_args(nt :: NamedTuple{<:Any,<:Tuple{Number}
     ([first(nt)], ComponentArrays.Axis(map(_->1, nt)))
 end
 
-NamedTupleView(nt::NamedTuple) = nt
-function NamedTupleView(cv::ComponentVector)
+_namedtuple(nt::NamedTuple) = nt
+function _namedtuple(cv::ComponentVector)
     tp = map(k -> getproperty(cv, k), valkeys(cv))
     unval(::Val{k}) where k = k
     NamedTuple{map(unval,valkeys(cv))}(tp)
