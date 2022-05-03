@@ -140,11 +140,11 @@ function logLike_and_∇z_logLike(prob::TuringMuseProblem, x, z, θ)
     error("Not implemented.")
 end
 
-function ẑ_at_θ(prob::AbstractMuseProblem, x, z₀, θ; ∇z_logLike_atol)
+function ẑ_at_θ(prob::TuringMuseProblem, x, z₀, θ; ∇z_logLike_atol)
     model = condition(prob.model, x)
     neglogp(z) = -logjoint(model, VarInfo(prob.vi_z_θ, (;_namedtuple(z)..., _namedtuple(θ)...)))
     soln = Optim.optimize(optim_only_fg!(neglogp, prob.autodiff), z₀, Optim.LBFGS(), Optim.Options(g_tol=∇z_logLike_atol))
-    # Optim.converged(soln) || error("MAP solution failed. Try tweaking ∇z_logLike_atol or fixing model.")
+    Optim.converged(soln) || warn("MAP solution failed, result could be erroneous. Try tweaking `θ₀` or `∇z_logLike_atol` argument to `muse` or fixing model.")
     soln.minimizer, soln
 end
 
@@ -177,7 +177,7 @@ end
 VarInfo(vi::TypedVarInfo, x::ComponentVector) = VarInfo(vi, _namedtuple(x))
 
 function VarInfo(vi::TypedVarInfo, x::NamedTuple)
-    T = promote_type(map(eltype, values(x))...) # if x is ForwardDiff Duals
+    T = promote_type(map(eltype, values(x))..., map(eltype, _namedtuple(values(vi)))...) # if x is ForwardDiff Duals
     VarInfo(
         NamedTuple{keys(vi.metadata)}(map(keys(vi.metadata),values(vi.metadata)) do k,v
             Metadata(
