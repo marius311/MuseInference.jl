@@ -19,6 +19,7 @@ using Random
 using Requires
 using Setfield
 using Statistics
+using Test
 using UnPack
 
 export MuseProblem, MuseResult, muse, muse!, get_J!, get_H!
@@ -26,6 +27,7 @@ export MuseProblem, MuseResult, muse, muse!, get_J!, get_H!
 include("util.jl")
 include("ad.jl")
 include("progress.jl")
+include("interface.jl")
 include("muse.jl")
 include("manual.jl")
 @init @require Turing="fce5fe82-541a-59a6-adf8-730c64b5f9a0" include("turing.jl")

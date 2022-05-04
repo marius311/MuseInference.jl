@@ -1,24 +1,5 @@
 
-### Generic MUSE code
 
-abstract type AbstractMuseProblem end
-
-
-## interface to be implemented by specific problem types
-
-function ∇θ_logLike end
-function logLike_and_∇z_logLike end
-function sample_x_z end
-logPriorθ(prob::AbstractMuseProblem, θ) = 0
-standardizeθ(prob::AbstractMuseProblem, θ) = θ
-
-
-# this can also be overriden by specific problems
-# the default does LBFGS using the provided logLike_and_∇z_logLike
-function ẑ_at_θ(prob::AbstractMuseProblem, x, z₀, θ; ∇z_logLike_atol)
-    soln = optimize(Optim.only_fg(z -> .-logLike_and_∇z_logLike(prob, x, z, θ)), z₀, Optim.LBFGS(), Optim.Options(g_tol=∇z_logLike_atol))
-    soln.minimizer, soln
-end
 
 
 ### MUSE result
@@ -108,7 +89,7 @@ function muse!(
     pmap = _map,
     batch_size = 1,
     regularize = identity,
-    H⁻¹_like = nothing,
+    H⁻¹_like′ = nothing,
     H⁻¹_update = :sims,
     broyden_memory = Inf,
     checkpoint_filename = nothing,
@@ -116,7 +97,8 @@ function muse!(
 )
 
     result.rng = rng = @something(rng, result.rng, copy(Random.default_rng()))
-    θunreg = θ = θ₀ = standardizeθ(prob, @something(result.θ, θ₀))
+    θunreg  = θ  = θ₀ = standardizeθ(prob, @something(result.θ, θ₀))
+    θunreg′ = θ′ = transform_θ(prob, θ)
     history = result.history
     
     _rng = copy(rng)
@@ -142,59 +124,66 @@ function muse!(
             end
 
             if i > 2
-                Δθ = history[end].θ - history[end-1].θ
-                sqrt(-(Δθ' * history[end].H⁻¹_post * Δθ)) < θ_rtol && break
+                Δθ′ = history[end].θ′ - history[end-1].θ′
+                sqrt(-(Δθ′' * history[end].H⁻¹_post′ * Δθ′)) < θ_rtol && break
             end
 
             # MUSE gradient
             gẑs = pmap(xs, ẑs, fill(θ,length(xs)); batch_size) do x, ẑ_prev, θ
                 local ẑ, history = ẑ_at_θ(prob, x, ẑ_prev, θ; ∇z_logLike_atol)
-                g = ∇θ_logLike(prob, x, ẑ, θ)
+                g  = ∇θ_logLike(prob, x, ẑ, θ,  UnTransformedθ())
+                g′ = ∇θ_logLike(prob, x, ẑ, θ′, Transformedθ())
                 progress && ProgressMeter.next!(pbar)
-                (;g, ẑ, history)
+                (;g, g′, ẑ, history)
             end
             ẑs = getindex.(gẑs, :ẑ)
             ẑ_history_dat, ẑ_history_sims = peel(getindex.(gẑs, :history))
-            g_like_dat, g_like_sims = peel(getindex.(gẑs, :g))
-            g_like = g_like_dat .- mean(g_like_sims)
-            g_prior = AD.gradient(AD.ForwardDiffBackend(), θ -> logPriorθ(prob, θ), θ)[1]
-            g_post = g_like .+ g_prior
+            g_like_dat′, g_like_sims′ = peel(getindex.(gẑs, :g′))
+            _,           g_like_sims  = peel(getindex.(gẑs, :g))
+            g_like′ = g_like_dat′ .- mean(g_like_sims′)
+            g_prior′ = AD.gradient(AD.ForwardDiffBackend(), θ′ -> logPriorθ(prob, θ′, Transformedθ()), θ′)[1]
+            g_post′ = g_like′ .+ g_prior′
 
             # Jacobian
-            h⁻¹_like_sims = -1 ./ var(collect(g_like_sims))
-            H⁻¹_like_sims = h⁻¹_like_sims isa Number ? h⁻¹_like_sims : Diagonal(h⁻¹_like_sims)
-            if (H⁻¹_like == nothing) || (H⁻¹_update == :sims)
-                H⁻¹_like = H⁻¹_like_sims
+            h⁻¹_like_sims′ = -1 ./ var(collect(g_like_sims′))
+            H⁻¹_like_sims′ = h⁻¹_like_sims′ isa Number ? h⁻¹_like_sims′ : Diagonal(h⁻¹_like_sims′)
+            if (H⁻¹_like′ == nothing) || (H⁻¹_update == :sims)
+                H⁻¹_like′ = H⁻¹_like_sims′
             elseif i > 2 && (H⁻¹_update in [:broyden, :diagonal_broyden])
                 # on subsequent steps, do a Broyden's update using at
                 # most the previous `broyden_memory` steps
                 j₀ = Int(max(2, i - broyden_memory))
                 H⁻¹_like = history[j₀-1].H⁻¹_like_sims
                 for j = j₀:i-1
-                    Δθ      = history[j].θ      - history[j-1].θ
-                    Δg_like = history[j].g_like - history[j-1].g_like
-                    H⁻¹_like = H⁻¹_like + ((Δθ - H⁻¹_like * Δg_like) / (Δθ' * H⁻¹_like * Δg_like)) * Δθ' * H⁻¹_like
+                    Δθ′      = history[j].θ′      - history[j-1].θ′
+                    Δg_like′ = history[j].g_like′ - history[j-1].g_like′
+                    H⁻¹_like′ = H⁻¹_like′ + ((Δθ′ - H⁻¹_like′ * Δg_like′) / (Δθ′' * H⁻¹_like′ * Δg_like′)) * Δθ′' * H⁻¹_like′
                     if H⁻¹_update == :diagonal_broyden
-                        H⁻¹_like = Diagonal(H⁻¹_like)
+                        H⁻¹_like′ = Diagonal(H⁻¹_like′)
                     end
                 end
             end
 
-            H_prior = AD.hessian(AD.ForwardDiffBackend(), θ -> logPriorθ(prob, θ), θ)[1]
-            H⁻¹_post = inv(inv(H⁻¹_like) + H_prior)
+            H_prior′ = AD.hessian(AD.ForwardDiffBackend(), θ′ -> logPriorθ(prob, θ′, Transformedθ()), θ′)[1]
+            H⁻¹_post′ = inv(inv(H⁻¹_like′) + H_prior′)
 
             t = now() - t₀
             push!(
                 history, 
-                (;θ, θunreg, 
-                g_like_dat, g_like_sims, g_like, g_prior, g_post, 
-                H⁻¹_post, H_prior, H⁻¹_like, H⁻¹_like_sims, 
-                ẑ_history_dat, ẑ_history_sims, t)
+                (;
+                    θ, θunreg, θ′, θunreg′,
+                    g_like_sims,
+                    g_like_dat′, g_like_sims′, g_like′, g_prior′, g_post′, 
+                    H⁻¹_post′, H_prior′, H⁻¹_like′, H⁻¹_like_sims′, 
+                    ẑ_history_dat, ẑ_history_sims, t
+                )
             )
 
             # Newton-Rhapson step
-            θunreg = θ .- α .* (H⁻¹_post * g_post)
-            θ = regularize(θunreg)
+            θunreg′ = θ′ .- α .* (H⁻¹_post′ * g_post′)
+            θunreg  = inv_transform_θ(prob, θunreg′)
+            θ′ = regularize(θunreg′)
+            θ  = inv_transform_θ(prob, θ′)
 
             (checkpoint_filename != nothing) && save(checkpoint_filename, "result", result)
 
@@ -270,7 +259,7 @@ function get_H!(
             return first(pjacobian(fdm, θ₀, step; pmap=pmap_jac, batch_size, pbar) do θ
                 x, = sample_x_z(prob, copy(rng), θ)
                 ẑ, = ẑ_at_θ(prob, x, ẑ₀, θ₀; ∇z_logLike_atol)
-                ∇θ_logLike(prob, x, ẑ, θ₀)
+                ∇θ_logLike(prob, x, ẑ, θ₀, UnTransformedθ())
             end)
         catch err
             if skip_errors && !(err isa InterruptException)
@@ -319,7 +308,7 @@ function get_J!(
         append!(result.gs, skipmissing(pmap(xs_z₀s, fill(θ₀,nsims_remaining); batch_size) do (x, z₀), θ₀
             try
                 ẑ, = ẑ_at_θ(prob, x, z₀, θ₀; ∇z_logLike_atol)
-                g = ∇θ_logLike(prob, x, ẑ, θ₀)
+                g = ∇θ_logLike(prob, x, ẑ, θ₀, UnTransformedθ())
                 progress && ProgressMeter.next!(pbar)
                 return g
             catch err
@@ -344,7 +333,7 @@ function finalize_result!(result::MuseResult, prob::AbstractMuseProblem)
     @unpack H, J, θ = result
     if H != nothing && J != nothing && θ != nothing
         𝟘 = zero(J) # if θ::ComponentArray, helps keep component labels 
-        H_prior = -AD.hessian(AD.ForwardDiffBackend(), θ -> logPriorθ(prob, θ), result.θ)[1]
+        H_prior = -AD.hessian(AD.ForwardDiffBackend(), θ -> logPriorθ(prob, θ, UnTransformedθ()), result.θ)[1]
         result.Σ⁻¹ = H' * inv(J) * H + H_prior + 𝟘
         result.Σ = inv(result.Σ⁻¹) + 𝟘
         if length(result.θ) == 1

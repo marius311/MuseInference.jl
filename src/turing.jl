@@ -10,6 +10,8 @@ using .Turing.DynamicPPL: evaluate!!, setval!, settrans!, Model, Metadata, getlo
 
 import .Turing.DynamicPPL: VarInfo, condition
 
+import ComponentArrays: ComponentVector
+
 export TuringMuseProblem
 
 
@@ -18,8 +20,10 @@ struct TuringMuseProblem{A<:AD.AbstractBackend, M<:Turing.Model} <: AbstractMuse
     autodiff :: A
     model :: M
     model_for_prior
-    vi_z_θ
+    vi_z′_θ
+    vi_z′_θ′
     vi_θ
+    vi_θ′
     x
     observed_vars
     latent_vars
@@ -81,24 +85,31 @@ function TuringMuseProblem(
 
     # model is expected to be passed in conditioned on x, so grab from there
     x = ComponentVector(select(model.context.values, observed_vars))
-    # vi for (z,θ) parameters in transformed space
-    vi_z_θ = VarInfo(model)
-    link!(vi_z_θ, SampleFromPrior())
+    # VarInfo for (z,θ) with both transformed
+    vi_z′_θ′ = VarInfo(model)
+    settrans!.((vi_z′_θ′,), true, VarName.((latent_vars..., hyper_vars...)))
+    # VarInfo for (z,θ) with only z transformed
+    vi_z′_θ = VarInfo(model)
+    settrans!.((vi_z′_θ,), true, VarName.(latent_vars))
     # model with all vars free
     model = decondition(model)
     # model for computing prior, just need any values for (x,z) to condition on here
     vars = _namedtuple(evaluate!!(model)[2])
     model_for_prior = model | select(vars, (observed_vars..., latent_vars...))
-    # vi for θ in transformed space
+    # VarInfo for θ
     vi_θ = VarInfo(model_for_prior)
-    link!(vi_θ, SampleFromPrior())
+    # VarInfo for transformed θ
+    vi_θ′ = deepcopy(vi_θ)
+    settrans!.((vi_θ′,), true, VarName.(hyper_vars))
 
     TuringMuseProblem(
         autodiff,
         model,
         model_for_prior,
-        vi_z_θ,
+        vi_z′_θ,
+        vi_z′_θ′,
         vi_θ,
+        vi_θ′,
         x,
         observed_vars,
         latent_vars,
@@ -107,56 +118,54 @@ function TuringMuseProblem(
 
 end
 
-function transform_θ(prob, θ)
+function transform_θ(prob::TuringMuseProblem, θ)
     vi = deepcopy(prob.vi_θ)
     setval!(vi, θ)
     link!(vi, SampleFromPrior())
-    _namedtuple(vi)
+    ComponentVector(vi)
 end
 
-function inv_transform_θ(prob, θ)
+function inv_transform_θ(prob::TuringMuseProblem, θ)
     vi = deepcopy(prob.vi_θ)
     setval!(vi, θ)
     for k in keys(θ)
         settrans!(vi, true, VarName(k))
     end
     invlink!(vi, SampleFromPrior())
-    _namedtuple(vi)
+    ComponentVector(vi)
 end
 
 standardizeθ(prob::TuringMuseProblem, θ::NamedTuple) = ComponentVector(θ)
 standardizeθ(prob::TuringMuseProblem, θ::Number) = length(prob.hyper_vars) == 1 ? ComponentVector(;θ) : error("Invalid θ type for this problem.")
 
-function logPriorθ(prob::TuringMuseProblem, θ)
-    logprior(prob.model_for_prior, VarInfo(prob.vi_θ, θ))
+function logPriorθ(prob::TuringMuseProblem, θ, θ_space)
+    vi = is_transformed(θ_space) ? prob.vi_θ′ : prob.vi_θ
+    logprior(prob.model_for_prior, VarInfo(vi, θ))
 end
 
-function ∇θ_logLike(prob::TuringMuseProblem, x, z, θ)
+function ∇θ_logLike(prob::TuringMuseProblem, x, z, θ, θ_space)
     model = condition(prob.model, x)
-    first(AD.gradient(prob.autodiff, θ -> logjoint(model, VarInfo(prob.vi_z_θ, (;_namedtuple(z)..., _namedtuple(θ)...))), θ))
-end
-
-function logLike_and_∇z_logLike(prob::TuringMuseProblem, x, z, θ)
-    error("Not implemented.")
+    vi = is_transformed(θ_space) ? prob.vi_z′_θ′ : prob.vi_z′_θ
+    first(AD.gradient(prob.autodiff, θ -> logjoint(model, VarInfo(vi, z, θ)), θ))
 end
 
 function ẑ_at_θ(prob::TuringMuseProblem, x, z₀, θ; ∇z_logLike_atol)
     model = condition(prob.model, x)
-    neglogp(z) = -logjoint(model, VarInfo(prob.vi_z_θ, (;_namedtuple(z)..., _namedtuple(θ)...)))
+    neglogp(z) = -logjoint(model, VarInfo(prob.vi_z′_θ, z, θ))
     soln = Optim.optimize(optim_only_fg!(neglogp, prob.autodiff), z₀, Optim.LBFGS(), Optim.Options(g_tol=∇z_logLike_atol))
-    Optim.converged(soln) || warn("MAP solution failed, result could be erroneous. Try tweaking `θ₀` or `∇z_logLike_atol` argument to `muse` or fixing model.")
+    _check_optim_soln(soln)
     soln.minimizer, soln
 end
 
 function sample_x_z(prob::TuringMuseProblem, rng::AbstractRNG, θ)
-    model = condition(prob.model, inv_transform_θ(prob, θ))
+    model = condition(prob.model, θ)
     vi = VarInfo(rng, model)
-    vars_constrained = map(copy, _namedtuple(vi))
+    vars_untransformed = map(copy, _namedtuple(vi))
     link!(vi, SampleFromPrior())
-    vars_unconstrained = map(copy, _namedtuple(vi))
+    vars_transformed = map(copy, _namedtuple(vi))
     (;
-        x = ComponentVector(select(vars_constrained,   prob.observed_vars)),
-        z = ComponentVector(select(vars_unconstrained, prob.latent_vars))
+        x = ComponentVector(select(vars_untransformed, prob.observed_vars)),
+        z = ComponentVector(select(vars_transformed,   prob.latent_vars))
     )
 end
 
@@ -174,7 +183,11 @@ function _namedtuple(vi::VarInfo)
     end
 end
 
-VarInfo(vi::TypedVarInfo, x::ComponentVector) = VarInfo(vi, _namedtuple(x))
+ComponentVector(vi::VarInfo) = ComponentVector(_namedtuple(vi))
+
+function VarInfo(vi::TypedVarInfo, x::Union{NamedTuple,ComponentVector}, xs::Union{NamedTuple,ComponentVector}...)
+    VarInfo(vi, merge(map(_namedtuple, (x, xs...))...))
+end
 
 function VarInfo(vi::TypedVarInfo, x::NamedTuple)
     T = promote_type(map(eltype, values(x))..., map(eltype, _namedtuple(values(vi)))...) # if x is ForwardDiff Duals
