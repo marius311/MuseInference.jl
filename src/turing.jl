@@ -77,30 +77,41 @@ automatic differenation.
 """
 function TuringMuseProblem(
     model; 
-    observed_vars = (:x,),
-    latent_vars = (:z,),
-    hyper_vars = (:θ,),
-    autodiff = AD.ForwardDiffBackend()
+    params = (:θ,),
+    autodiff = nothing,
 )
 
-    # model is expected to be passed in conditioned on x, so grab from there
-    x = ComponentVector(select(model.context.values, observed_vars))
+    # set backend based on Turing's by default
+    if autodiff == nothing
+        if Turing.ADBACKEND[] == :zygote
+            autodiff = ZygoteBackend()
+        elseif Turing.ADBACKEND[] == :forwarddiff
+            autodiff = ForwardDiffBackend()
+        else
+            error("Unsupposed backend from Turing: $(Turing.ADBACKEND)")
+        end
+    end
+    # model is expected to be passed in conditioned on x
+    x = ComponentVector(model.context.values)
+    # figure out variable names
+    observed = keys(x)
+    latent = keys(delete(_namedtuple(VarInfo(model)), (observed..., params...)))
     # VarInfo for (z,θ) with both transformed
     vi_z′_θ′ = VarInfo(model)
-    settrans!.((vi_z′_θ′,), true, VarName.((latent_vars..., hyper_vars...)))
+    settrans!.((vi_z′_θ′,), true, VarName.((latent..., params...)))
     # VarInfo for (z,θ) with only z transformed
     vi_z′_θ = VarInfo(model)
-    settrans!.((vi_z′_θ,), true, VarName.(latent_vars))
+    settrans!.((vi_z′_θ,), true, VarName.(latent))
     # model with all vars free
     model = decondition(model)
     # model for computing prior, just need any values for (x,z) to condition on here
     vars = _namedtuple(evaluate!!(model)[2])
-    model_for_prior = model | select(vars, (observed_vars..., latent_vars...))
+    model_for_prior = model | select(vars, (observed..., latent...))
     # VarInfo for θ
     vi_θ = VarInfo(model_for_prior)
     # VarInfo for transformed θ
     vi_θ′ = deepcopy(vi_θ)
-    settrans!.((vi_θ′,), true, VarName.(hyper_vars))
+    settrans!.((vi_θ′,), true, VarName.(params))
 
     TuringMuseProblem(
         autodiff,
@@ -111,9 +122,9 @@ function TuringMuseProblem(
         vi_θ,
         vi_θ′,
         x,
-        observed_vars,
-        latent_vars,
-        hyper_vars
+        observed,
+        latent,
+        params
     )
 
 end
@@ -214,6 +225,12 @@ condition(model::Model, x::ComponentVector) = condition(model, _namedtuple(x))
 atleast1d(x::Number) = [x]
 atleast1d(x::AbstractVector) = x
 
-muse!(result::MuseResult, model::Turing.Model, args...; kwargs...) = muse!(result, TuringMuseProblem(model), args...; kwargs...)
-get_J!(result::MuseResult, model::Turing.Model, args...; kwargs...) = get_J!(result, TuringMuseProblem(model), args...; kwargs...)
-get_H!(result::MuseResult, model::Turing.Model, args...; kwargs...) = get_H!(result, TuringMuseProblem(model), args...; kwargs...)
+function muse!(result::MuseResult, model::Turing.Model, θ₀ = result.θ; kwargs...)
+    muse!(result, TuringMuseProblem(model, params=keys(θ₀)), θ₀; kwargs...)
+end
+function get_J!(result::MuseResult, model::Turing.Model, θ₀ = result.θ; kwargs...)
+    get_J!(result, TuringMuseProblem(model, params=keys(θ₀)), θ₀; kwargs...)
+end
+function get_H!(result::MuseResult, model::Turing.Model, θ₀ = result.θ; kwargs...)
+    get_H!(result, TuringMuseProblem(model, params=keys(θ₀)), θ₀; kwargs...)
+end

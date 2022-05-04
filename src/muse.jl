@@ -199,8 +199,8 @@ function muse!(
     result.θ = θunreg
     result.gs = collect(history[end].g_like_sims)
     if get_covariance
-        get_J!(result, prob)
-        get_H!(result, prob)
+        get_J!(result, prob; nsims)
+        get_H!(result, prob; nsims=nsims÷10, ∇z_logLike_atol)
     end
     result
 
