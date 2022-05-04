@@ -33,17 +33,15 @@ end
 
 @doc doc"""
 
-    TuringMuseProblem(
-        model;
-        observed_vars=(:x,), latent_vars=(:z,), hyper_vars=(:θ,), 
-        autodiff=MuseInference.ForwardDiffBackend()
-    )
+    TuringMuseProblem(model; params = (:θ,), autodiff = Turing.ADBACKEND)
 
 Wrap a Turing model to be ready to pass to [`muse`](@ref). 
 
-The names of variables within the model which are observed, latent, or
-hyperparameters, can be customized via keyword arguments which accept
-tuples of names. E.g., 
+The model should be conditioned on the variables which comprise the
+"data", and all other variables should be unconditioned. `params`
+should give the variable names of the parameters which MUSE will
+estimate. All other non-conditioned and non-`params` variables will be
+considered the latent space. E.g.,
 
 ```julia
 @model function demo()
@@ -56,23 +54,19 @@ tuples of names. E.g.,
 end
 truth = demo()()
 model = demo() | (;truth.x, truth.y)
-prob = TuringMuseProblem(
-    model, observed_vars=(:x,:y), latent_vars=(:z,:w), hyper_vars=(:σ,)
-)
+prob = TuringMuseProblem(model, params=(:σ,))
 ```
-
-!!! note
-
-    When defining Turing models to be used with MuseInference, the new-style definition 
-    of Turing models is required, where the random variables do not appear as arguments 
-    to the function. This is because internally, MuseInference needs
-    to [`condition`](https://turinglang.github.io/DynamicPPL.jl/stable/#AbstractPPL.condition-Tuple{Model}) 
-    your model on various variables.
 
 The `autodiff` parameter should be either
 `MuseInference.ForwardDiffBackend()` or
 `MuseInference.ZygoteBackend()`, specifying which library to use for
 automatic differenation. 
+
+!!! note
+
+    You can also call [`muse`](@ref), etc... directly on the model, e.g.
+    `muse(model, (σ=1,), ...)`, in which case the parameter names `params`
+    will be read from the keys of the starting point.
 
 """
 function TuringMuseProblem(
@@ -146,8 +140,9 @@ function inv_transform_θ(prob::TuringMuseProblem, θ)
     ComponentVector(vi)
 end
 
-standardizeθ(prob::TuringMuseProblem, θ::NamedTuple) = ComponentVector(θ)
-standardizeθ(prob::TuringMuseProblem, θ::Number) = length(prob.hyper_vars) == 1 ? ComponentVector(;θ) : error("Invalid θ type for this problem.")
+standardizeθ(prob::TuringMuseProblem, θ::NamedTuple) = 1f0 * ComponentVector(θ) # ensure at least Float32
+standardizeθ(prob::TuringMuseProblem, θ::Number) = 
+    length(prob.hyper_vars) == 1 ? standardizeθ(prob, (;θ)) : error("Invalid θ type for this problem.")
 
 function logPriorθ(prob::TuringMuseProblem, θ, θ_space)
     vi = is_transformed(θ_space) ? prob.vi_θ′ : prob.vi_θ
@@ -225,12 +220,15 @@ condition(model::Model, x::ComponentVector) = condition(model, _namedtuple(x))
 atleast1d(x::Number) = [x]
 atleast1d(x::AbstractVector) = x
 
+_params_from_θ₀(θ₀::Number) = (:θ,)
+_params_from_θ₀(θ₀) = keys(θ₀)
+
 function muse!(result::MuseResult, model::Turing.Model, θ₀ = result.θ; kwargs...)
-    muse!(result, TuringMuseProblem(model, params=keys(θ₀)), θ₀; kwargs...)
+    muse!(result, TuringMuseProblem(model, params=_params_from_θ₀(θ₀)), θ₀; kwargs...)
 end
 function get_J!(result::MuseResult, model::Turing.Model, θ₀ = result.θ; kwargs...)
-    get_J!(result, TuringMuseProblem(model, params=keys(θ₀)), θ₀; kwargs...)
+    get_J!(result, TuringMuseProblem(model, params=_params_from_θ₀(θ₀)), θ₀; kwargs...)
 end
 function get_H!(result::MuseResult, model::Turing.Model, θ₀ = result.θ; kwargs...)
-    get_H!(result, TuringMuseProblem(model, params=keys(θ₀)), θ₀; kwargs...)
+    get_H!(result, TuringMuseProblem(model, params=_params_from_θ₀(θ₀)), θ₀; kwargs...)
 end

@@ -32,7 +32,8 @@ The easiest way to use MuseInference is with problems defined via the Probabilis
 First, load up the relevant packages:
 
 ```@example 1
-using MuseInference, Random, Turing, PyPlot, Printf, Dates
+using MuseInference, Random, Turing, Zygote, PyPlot, Printf, Dates
+Turing.setadbackend(:zygote)
 PyPlot.ioff() # hide
 using Logging # hide
 Logging.disable_logging(Logging.Info) # hide
@@ -173,7 +174,8 @@ prob = MuseProblem(
     end, 
     function logPrior(θ)
         -θ^2/(2*3^2)
-    end
+    end,
+    MuseInference.ZygoteBackend()
 )
 nothing # hide
 ```

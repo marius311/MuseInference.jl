@@ -14,7 +14,8 @@ makedocs(
     ),
     pages = [
         "index.md",
-        "api.md",
+        "userapi.md",
+        "devapi.md",
     ],
     checkdocs = :none,
     strict = true,
