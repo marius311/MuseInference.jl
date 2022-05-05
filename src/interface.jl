@@ -15,7 +15,7 @@ is_transformed(::UnTransformedθ) = false
     transform_θ(prob::AbstractMuseProblem, θ) 
 
 If needed, custom `AbstractMuseProblem`s should implement this to map
-`θ` to a space where its domain is $[-\infty,\infty]$.
+`θ` to a space where its domain is $(-\infty,\infty)$.
 """
 transform_θ(prob::AbstractMuseProblem, θ) = θ
 
@@ -23,7 +23,7 @@ transform_θ(prob::AbstractMuseProblem, θ) = θ
     inv_transform_θ(prob::AbstractMuseProblem, θ) 
 
 If needed, custom `AbstractMuseProblem`s should implement this to map
-`θ` from the space where its domain is $[-\infty,\infty]$
+`θ` from the space where its domain is $(-\infty,\infty)$
 back to the original space.
 """
 inv_transform_θ(prob::AbstractMuseProblem, θ) = θ
@@ -38,7 +38,7 @@ function should be:
     ∇θ_logLike(prob::AbstractMuseProblem, x, z, θ)
 
 If the problem needs a transformation of `θ` to map its domain to
-$[-\infty,\infty]$, then it should instead implement:
+$(-\infty,\infty)$, then it should instead implement:
 
     ∇θ_logLike(prob::AbstractMuseProblem, x, z, θ, θ_space)
 
@@ -46,7 +46,7 @@ where `θ_space` will be either `Transformedθ()` or `UnTransformedθ()`.
 In this case, the `θ` argument will be passed in the space given by
 `θ_space` and the gradient should be w.r.t. to `θ` in that space.
 
-`z` must have domain $[-\infty,\infty]$. If a transformation is
+`z` must have domain $(-\infty,\infty)$. If a transformation is
 required to make this the case, that should be handled internal to
 this function and `z` will always refer to the transformed `z`.
 """
@@ -57,16 +57,14 @@ function ∇θ_logLike end
 
 
 @doc doc"""
-Custom `AbstractMuseProblem`s should implement this and return the log
-likelihood and its gradient with respect to the latent space `z`,
-evaluated at hyper parameters `θ` and data `x` . The signature of the
-function should be:
+Custom `AbstractMuseProblem`s should implement this and return a tuple
+`(logLike, ∇z_logLike)` which give the log likelihood and its gradient
+with respect to the latent space `z`, evaluated at hyper parameters
+`θ` and data `x` . The signature of the function should be:
 
-    ∇θ_logLike(prob::AbstractMuseProblem, x, z, θ)
+    logLike_and_∇z_logLike(prob::AbstractMuseProblem, x, z, θ)
 
-The return value should be a tuple of `(value, gradient)`. 
-
-`z` must have domain $[-\infty,\infty]$. If a transformation is
+`z` must have domain $(-\infty,\infty)$. If a transformation is
 required to make this the case, that should be handled internal to
 this function and `z` will always refer to the transformed `z`.
 
@@ -107,7 +105,7 @@ function should be:
     logPriorθ(prob::AbstractMuseProblem, θ)
 
 If the problem needs a transformation of `θ` to map its domain to
-$[-\infty,\infty]$, then it should instead implement:
+$(-\infty,\infty)$, then it should instead implement:
 
     logPriorθ(prob::AbstractMuseProblem, θ, θ_space)
 
@@ -115,7 +113,7 @@ where `θ_space` will be either `Transformedθ()` or `UnTransformedθ()`.
 In this case, the `θ` argument will be passed in the space given by
 `θ_space`. 
 """
-logPriorθ(prob::AbstractMuseProblem, θ, θ_space) = logPriorθ(prob::AbstractMuseProblem, θ) 
+logPriorθ(prob::AbstractMuseProblem, θ, θ_space) = logPriorθ(prob, θ)
 logPriorθ(prob::AbstractMuseProblem, θ) = 0
 
 
@@ -148,7 +146,7 @@ The `θ` argument to this function will always be in the un-transfored
 
 The `z₀` should be used as a starting guess for the solution. 
         
-`z` must have domain $[-\infty,\infty]$. If a transformation is
+`z` must have domain $(-\infty,\infty)$. If a transformation is
 required to make this the case, that should be handled internal to
 this function, and the return value should refer to the transformed
 `z`. 
