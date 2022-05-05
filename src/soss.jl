@@ -4,7 +4,7 @@ using .Soss
 
 export SossMuseProblem
 
-struct SossMuseProblem{A<:AD.AbstractBackend, M<:Soss.Model, MP<:Soss.Model} <: AbstractMuseProblem
+struct SossMuseProblem{A<:AD.AbstractBackend, M<:Soss.AbstractModel, MP<:Soss.AbstractModel} <: AbstractMuseProblem
     autodiff :: A
     model :: M
     model_for_prior :: MP
@@ -20,11 +20,10 @@ function SossMuseProblem(
     autodiff = ForwardDiffBackend()
 )
     x = model.obs
-    model = Model(model) # decondition
     observed_vars = keys(x)
     hyper_vars = params
     latent_vars = keys(delete(rand(model), (observed_vars..., hyper_vars...)))
-    model_for_prior = likelihood(model, hyper_vars...)
+    model_for_prior = likelihood(Model(model), hyper_vars...)(argvals(model))
     SossMuseProblem(
         autodiff,
         model,
