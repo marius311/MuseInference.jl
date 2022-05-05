@@ -62,7 +62,7 @@ end
 nothing # hide
 ```
 
-Next, lets choose a true value of $\theta=0$ and generate some simulated data:
+Next, let's choose a true value of $\theta=0$ and generate some simulated data:
 
 ```@example 1
 Random.seed!(0)
@@ -102,7 +102,7 @@ t_vi = @time @elapsed vi_result = vi(model, ADVI(10, 1000))
 nothing # hide
 ```
 
-Now lets plot the different estimates. In this case, MUSE gives a nearly perfect answer at a fraction of the computational cost. MFVI struggles in both speed and accuracy by comparison.
+Now let's plot the different estimates. In this case, MUSE gives a nearly perfect answer at a fraction of the computational cost. MFVI struggles in both speed and accuracy by comparison.
 
 ```@example 1
 figure(figsize=(6,5)) # hide
@@ -135,7 +135,7 @@ It is also possible to use MuseInference without Turing. The MUSE estimate requi
    ```
 
    where `rng` is an `AbstractRNG` object which should be used when generating random numbers, `θ` are the parameters, and return value should be a named tuple `(;x, z)`. 
-    
+   
 2. A function which computes the joint likelihood, $\mathcal{P}(x,z\,|\,\theta)$, with signature:
 
    ```julia
@@ -145,7 +145,7 @@ It is also possible to use MuseInference without Turing. The MUSE estimate requi
    ```
 
    A user-specifiable automatic differentiation library will be used to take gradients of this function. 
-    
+   
 3. A function which computes the prior, $\mathcal{P}(\theta)$, with signature:
 
    ```julia
