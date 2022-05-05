@@ -14,6 +14,7 @@ using LinearAlgebra
 using Markdown
 using NamedTupleTools
 using Optim
+using Printf
 using ProgressMeter
 using Random
 using Requires

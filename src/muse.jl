@@ -41,6 +41,21 @@ Base.@kwdef mutable struct MuseResult
 end
 
 
+function Base.show(io::IO, result::MuseResult)
+    _print(μ) = @sprintf("%.4g", μ)
+    _print(μ, σ) = @sprintf("%.4g±%.3g", μ, σ)
+    print(io, "MuseResult(")
+    if result.θ != nothing && result.Σ != nothing
+        str = sprint(show, _print.(result.θ, sqrt.(diag(result.Σ))))
+    elseif result.θ != nothing
+        str = sprint(show, _print.(result.θ))
+    else
+        str = ""
+    end
+    print(io, replace(str, "\"" => ""))
+    print(io,")")
+end
+
 ### MUSE solver
 
 @doc doc"""
