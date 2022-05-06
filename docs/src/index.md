@@ -32,7 +32,7 @@ The easiest way to use MuseInference is with problems defined via the Probabilis
 First, load up the relevant packages:
 
 ```@example 1
-using MuseInference, Random, Turing, Zygote, PyPlot, Printf, Dates
+using MuseInference, Random, Turing, Zygote, PyPlot, Printf, Dates, LinearAlgebra
 Turing.setadbackend(:zygote)
 PyPlot.ioff() # hide
 using Logging # hide
@@ -56,8 +56,8 @@ for $i=1...512$. This problem can be described by the following Turing model:
 ```@example 1
 @model function funnel()
     θ ~ Normal(0, 3)
-    z ~ MvNormal(zeros(512), exp(θ/2))
-    x ~ MvNormal(z, 1)
+    z ~ MvNormal(zeros(512), exp(θ/2)*I)
+    x ~ MvNormal(z, I)
 end
 nothing # hide
 ```
@@ -98,6 +98,7 @@ nothing # hide
 Lets also try mean-field variational inference (MFVI) to compare to another approximate method.
 
 ```@example 1
+vi(model, ADVI(10, 10)) # warmup # hide
 t_vi = @time @elapsed vi_result = vi(model, ADVI(10, 1000))
 nothing # hide
 ```
@@ -165,8 +166,8 @@ We can compute the MUSE estimate for the same funnel problem as above. To do so,
 prob = MuseProblem(
     x,
     function sample_x_z(rng, θ)
-        z = rand(rng, MvNormal(zeros(512), exp(θ/2)))
-        x = rand(rng, MvNormal(z, 1))
+        z = rand(rng, MvNormal(zeros(512), exp(θ/2)*I))
+        x = rand(rng, MvNormal(z, I))
         (;x, z)
     end,
     function logLike(x, z, θ)
