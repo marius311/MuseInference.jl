@@ -162,8 +162,8 @@ function ẑ_at_θ(prob::AbstractMuseProblem, x, z₀, θ; ∇z_logLike_atol)
 end
 
 function _check_optim_soln(soln)
-    Optim.converged(soln) || warn("MAP solution failed, result could be erroneous. Try tweaking `θ₀` or `∇z_logLike_atol` arguments to `muse` or fixing model.")
-    isfinite(soln.minimum) || error("MAP solution failed with logjoint(MAP)=$(soln.minimum).")
+    Optim.converged(soln) || @warn("MAP solution failed, result could be erroneous. Try tweaking `θ₀` or `∇z_logLike_atol` arguments to `muse` or fixing model.")
+    isfinite(soln.minimum) || @error("MAP solution failed with logjoint(MAP)=$(soln.minimum).")
 end
 
 
@@ -174,35 +174,40 @@ end
         θ;
         fdm = central_fdm(3, 1),
         atol = 1e-3,
-        rng = Random.default_rng()
+        rng = Random.default_rng(),
+        has_volume_factor = true
     )
 
 Checks the self-consistency of a defined problem at a given `θ`, e.g.
-that `inv_transform_θ(prob, transform_θ(prob, θ)) ≈ θ`, etc... Mostly
-useful as a diagonostic when implementing a new `AbstractMuseProblem`. 
+check that `inv_transform_θ(prob, transform_θ(prob, θ)) ≈ θ`, etc...
+This is mostly useful as a diagonostic when implementing a new
+`AbstractMuseProblem`. 
 
 A random `x` and `z` are sampled from `rng`. Finite differences are
-computed using `fdm` and `atol` set the tolerance for `≈`. 
+computed using `fdm` and `atol` set the tolerance for `≈`.
+`has_volume_factor` determines if the transformation includes the
+logdet jacobian in the likelihood.
 """
 function check_self_consistency(
     prob, 
     θ;
     fdm = central_fdm(3, 1),
     atol = 1e-3,
-    rng = Random.default_rng()
+    rng = Random.default_rng(),
+    has_volume_factor = true
 )
 
     θ = standardizeθ(prob, θ)
     x, z = sample_x_z(prob, rng, θ)
     # volume factor which is added by transformations. dont assume the
     # transformation is AD-able (eg it isnt for Turing)
-    J(θ) = FiniteDifferences.jacobian(fdm, θ -> transform_θ(prob, θ), θ)[1]
-    V(θ) = logdet(J(θ))
-    ∇θ_V(θ) = FiniteDifferences.grad(fdm, V, θ)[1]
+    J(θ) = has_volume_factor ? FiniteDifferences.jacobian(fdm, θ -> transform_θ(prob, θ), θ)[1] : 1
+    V(θ) = has_volume_factor ? logdet(J(θ)) : 0
+    ∇θ_V(θ) = has_volume_factor ? FiniteDifferences.grad(fdm, V, θ)[1] : 0
     @testset "Self-consistency" begin
         @test inv_transform_θ(prob, transform_θ(prob, θ)) ≈ θ  atol=atol
-        @test logPriorθ(prob, θ, UnTransformedθ()) ≈ logPriorθ(prob, transform_θ(prob, θ), Transformedθ()) + V(θ)  atol=atol
-        @test ∇θ_logLike(prob, x, z, θ, UnTransformedθ()) ≈ J(θ)' * ∇θ_logLike(prob, x, z, transform_θ(prob, θ), Transformedθ()) + ∇θ_V(θ)  atol=atol
+        @test logPriorθ(prob, θ, UnTransformedθ()) ≈ logPriorθ(prob, transform_θ(prob, θ), Transformedθ()) .+ V(θ)  atol=atol
+        @test ∇θ_logLike(prob, x, z, θ, UnTransformedθ()) ≈ J(θ)' * ∇θ_logLike(prob, x, z, transform_θ(prob, θ), Transformedθ()) .+ ∇θ_V(θ)  atol=atol
     end
 end
 
