@@ -1,6 +1,5 @@
 
-
-using .Soss
+import .Soss
 import .Soss.TransformVariables as TV
 
 export SossMuseProblem
@@ -23,13 +22,14 @@ function SossMuseProblem(
     autodiff = ForwardDiffBackend()
 )
     x = model.obs
+    !isempty(x) || error("Model must be conditioned on observed data.")
     sim = rand(model)
     observed_vars = keys(x)
     hyper_vars = params
     latent_vars = keys(delete(sim, (observed_vars..., hyper_vars...)))
-    model_for_prior = likelihood(Model(model), hyper_vars...)(argvals(model))
-    xform_z = xform(model | select(sim, hyper_vars))
-    xform_θ = xform(model | select(sim, latent_vars))
+    model_for_prior = Soss.likelihood(Soss.Model(model), hyper_vars...)(Soss.argvals(model))
+    xform_z = Soss.xform(model | select(sim, hyper_vars))
+    xform_θ = Soss.xform(model | select(sim, latent_vars))
     SossMuseProblem(
         autodiff,
         model,
@@ -52,7 +52,7 @@ function inv_transform_θ(prob::SossMuseProblem, θ)
 end
 
 function logPriorθ(prob::SossMuseProblem, θ::ComponentVector, ::UnTransformedθ)
-    logdensity(prob.model_for_prior(_namedtuple(θ)))
+    Soss.logdensity(prob.model_for_prior(_namedtuple(θ)))
 end
 function logPriorθ(prob::SossMuseProblem, θ::AbstractVector, ::Transformedθ)
     logPriorθ(prob, inv_transform_θ(prob, θ), UnTransformedθ())
@@ -60,20 +60,20 @@ end
 
 function ∇θ_logLike(prob::SossMuseProblem, x, z::AbstractVector, θ::ComponentVector, ::UnTransformedθ)
     like = prob.model | (;_namedtuple(x)..., TV.transform(prob.xform_z, z)...)
-    first(AD.gradient(prob.autodiff, θ -> logdensity(like, _namedtuple(θ)), θ))
+    first(AD.gradient(prob.autodiff, θ -> Soss.logdensity(like, _namedtuple(θ)), θ))
 end
 function ∇θ_logLike(prob::SossMuseProblem, x, z::AbstractVector, θ::AbstractVector, ::Transformedθ)
     like = prob.model | (;_namedtuple(x)..., TV.transform(prob.xform_z, z)...)
-    first(AD.gradient(prob.autodiff, θ -> logdensity(like, _namedtuple(inv_transform_θ(prob, θ))), θ))
+    first(AD.gradient(prob.autodiff, θ -> Soss.logdensity(like, _namedtuple(inv_transform_θ(prob, θ))), θ))
 end
 
 
 function logLike_and_∇z_logLike(prob::SossMuseProblem, x, z, θ)
-    first.(AD.value_and_gradient(prob.autodiff, z -> logdensity(prob.model | (;_namedtuple(x)..., _namedtuple(θ)...), TV.transform(prob.xform_z, z)), z))
+    first.(AD.value_and_gradient(prob.autodiff, z -> Soss.logdensity(prob.model | (;_namedtuple(x)..., _namedtuple(θ)...), TV.transform(prob.xform_z, z)), z))
 end
 
 function sample_x_z(prob::SossMuseProblem, rng::AbstractRNG, θ)
-    sim = predict(rng, prob.model, _namedtuple(θ))
+    sim = Soss.predict(rng, prob.model, _namedtuple(θ))
     x = ComponentVector(select(sim, prob.observed_vars))
     z = TV.inverse(prob.xform_z, select(sim, prob.latent_vars))
     (;x, z)

@@ -192,7 +192,7 @@ function check_self_consistency(
     prob, 
     θ;
     fdm = central_fdm(3, 1),
-    atol = 1e-3,
+    atol = 1e-2,
     rng = Random.default_rng(),
     has_volume_factor = true
 )
