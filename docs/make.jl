@@ -2,7 +2,10 @@
 # ensure in right directory and environment
 cd(dirname(@__FILE__))
 using Pkg
-Pkg.activate(".")
+if Pkg.project().name == "MuseInference" 
+    using TestEnv # you'll need TestEnv in your global environment
+    TestEnv.activate()
+end
 
 using Documenter, MuseInference, Turing
 
