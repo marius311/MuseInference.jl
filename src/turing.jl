@@ -84,10 +84,10 @@ function TuringMuseProblem(
     latent = keys(delete(_namedtuple(DynPPL.VarInfo(model)), (observed..., params...)))
     # VarInfo for (z,θ) with both transformed
     vi_z′_θ′ = DynPPL.VarInfo(model)
-    DynPPL.settrans!.((vi_z′_θ′,), true, DynPPL.VarName.((latent..., params...)))
+    DynPPL.settrans!.((vi_z′_θ′,), true, _VarName.((latent..., params...)))
     # VarInfo for (z,θ) with only z transformed
     vi_z′_θ = DynPPL.VarInfo(model)
-    DynPPL.settrans!.((vi_z′_θ,), true, DynPPL.VarName.(latent))
+    DynPPL.settrans!.((vi_z′_θ,), true, _VarName.(latent))
     # model with all vars free
     model = DynPPL.decondition(model)
     # model for computing prior, just need any values for (x,z) to condition on here
@@ -97,7 +97,7 @@ function TuringMuseProblem(
     vi_θ = DynPPL.VarInfo(model_for_prior)
     # VarInfo for transformed θ
     vi_θ′ = deepcopy(vi_θ)
-    DynPPL.settrans!.((vi_θ′,), true, DynPPL.VarName.(params))
+    DynPPL.settrans!.((vi_θ′,), true, _VarName.(params))
 
     TuringMuseProblem(
         autodiff,
@@ -126,7 +126,7 @@ function inv_transform_θ(prob::TuringMuseProblem, θ)
     vi = deepcopy(prob.vi_θ)
     DynPPL.setval!(vi, θ)
     for k in keys(θ)
-        DynPPL.settrans!(vi, true, DynPPL.VarName(k))
+        DynPPL.settrans!(vi, true, _VarName(k))
     end
     DynPPL.invlink!(vi, DynPPL.SampleFromPrior())
     ComponentVector(vi)
@@ -208,6 +208,7 @@ function DynPPL.VarInfo(vi::DynPPL.TypedVarInfo, x::NamedTuple)
 end
 
 DynPPL.condition(model::DynPPL.Model, x::ComponentVector) = DynPPL.condition(model, _namedtuple(x))
+_VarName(x::Symbol) = DynPPL.VarName{x}()
 
 atleast1d(x::Number) = [x]
 atleast1d(x::AbstractVector) = x
