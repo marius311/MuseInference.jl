@@ -1,6 +1,7 @@
 
 import .Soss
 import .Soss.TransformVariables as TV
+import .Soss.SimpleGraphs as SG
 
 export SossMuseProblem
 
@@ -18,7 +19,7 @@ end
 
 function SossMuseProblem(
     model::Soss.ConditionalModel; 
-    params = (:θ,), 
+    params = leaf_params(model),
     autodiff = ForwardDiffBackend()
 )
     x = model.obs
@@ -41,6 +42,11 @@ function SossMuseProblem(
         latent_vars,
         hyper_vars
     )
+end
+
+function leaf_params(model)
+    D = Soss.digraph(Soss.Model(model))
+    [x for x in SG.vlist(D) if isempty(filter(!in(keys(Soss.argvals(model))), SG.in_neighbors(D, x)))]
 end
 
 function transform_θ(prob::SossMuseProblem, θ)
