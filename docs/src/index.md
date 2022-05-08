@@ -80,7 +80,7 @@ chain = @time sample(model, NUTS(100,0.65,init_ϵ=0.5), 500)
 nothing # hide
 ```
 
-We next compute the MUSE estimate for the same problem. To make the timing comparison fair, the number of MUSE simulations should be the same as the effective sample size of the chain we just ran. This is:
+We next compute the MUSE estimate for the same problem. To reach the same Monte Carlo error as HMC, the number of MUSE simulations should be the same as the effective sample size of the chain we just ran. This is:
 
 ```@example 1 
 nsims = round(Int, ess_rhat(chain)[:θ,:ess])
