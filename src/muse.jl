@@ -96,7 +96,7 @@ function muse!(
     rng = nothing,
     z₀ = nothing,
     maxsteps = 50,
-    θ_rtol = 1e-2,
+    θ_rtol = 1e-1,
     ∇z_logLike_atol = 1e-2,
     nsims = 100,
     α = 0.7,
