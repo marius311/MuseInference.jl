@@ -12,7 +12,7 @@ rng = StableRNG(0)
 
         Turing.@model function turing_funnel()
             θ ~ Distributions.Normal(0, 3)
-            z ~ Distributions.MvNormal(zeros(512), exp(θ/2) * I)
+            z ~ Distributions.MvNormal(zeros(512), exp(θ) * I)
             x ~ Distributions.MvNormal(z, I)
         end
 
@@ -25,7 +25,7 @@ rng = StableRNG(0)
             prob = TuringMuseProblem(turing_funnel() | (;x); autodiff)
             MuseInference.check_self_consistency(prob, (θ=1,), has_volume_factor=true, rng=copy(rng))
             result = muse(prob, (θ=1,); rng=copy(rng), get_covariance=true)
-            @test result.dist.μ / result.dist.σ < 1
+            @test result.dist.μ / result.dist.σ < 2
 
         end
 
@@ -37,7 +37,7 @@ rng = StableRNG(0)
 
         soss_funnel = Soss.@model (σ) begin
             θ ~ Distributions.Normal(0, σ)
-            z ~ Distributions.MvNormal(zeros(512), exp(θ/2) * I)
+            z ~ Distributions.MvNormal(zeros(512), exp(θ) * I)
             x ~ Distributions.MvNormal(z, I)
         end
 
@@ -50,7 +50,7 @@ rng = StableRNG(0)
             prob = SossMuseProblem(soss_funnel(3) | (;x); autodiff)
             MuseInference.check_self_consistency(prob, (θ=1,), has_volume_factor=false, rng=copy(rng))
             result = muse(prob, (θ=1,); rng=copy(rng), get_covariance=true)
-            @test result.dist.μ / result.dist.σ < 1
+            @test result.dist.μ / result.dist.σ < 2
 
         end
 
@@ -75,7 +75,7 @@ rng = StableRNG(0)
             prob = SossMuseProblem(soss_funnel(3) | (;x); autodiff)
             MuseInference.check_self_consistency(prob, (θ=1,), has_volume_factor=false, rng=copy(rng))
             result = muse(prob, (θ=1,); rng=copy(rng), get_covariance=true)
-            @test result.dist.μ / result.dist.σ < 1
+            @test result.dist.μ / result.dist.σ < 2
 
         end
 

@@ -9,6 +9,9 @@ end
 
 using Documenter, MuseInference, Turing
 
+# change to true to skip running doc code
+Documenter.Utilities.Selectors.disable(::Type{Documenter.Expanders.ExampleBlocks}) = false
+
 makedocs(
     sitename = "MuseInference",
     format = Documenter.HTML(
@@ -21,7 +24,8 @@ makedocs(
         "devapi.md",
     ],
     checkdocs = :none,
-    strict = true,
+    doctest = false,
+    strict = false,
     modules = [MuseInference]
 )
 

@@ -25,40 +25,74 @@ end
 
 @doc doc"""
 
-    TuringMuseProblem(model; params = (:θ,), autodiff = Turing.ADBACKEND)
+    TuringMuseProblem(model; params, autodiff = Turing.ADBACKEND)
 
-Wrap a Turing model to be ready to pass to [`muse`](@ref). 
+Specify a MUSE problem with a [Turing](https://turing.ml) model.
 
-The model should be conditioned on the variables which comprise the
-"data", and all other variables should be unconditioned. `params`
-should give the variable names of the parameters which MUSE will
-estimate. All other non-conditioned and non-`params` variables will be
-considered the latent space. E.g.,
-
-```julia
-@model function demo()
-    σ ~ Normal(0, 3)
-    z ~ MvNormal(zeros(512), exp(σ/2))
-    w ~ MvNormal(z, 1)
-    x ~ MvNormal(w, 1)
-    y ~ MvNormal(w, 2)
-    (;σ,z,w,x,y)
-end
-truth = demo()()
-model = demo() | (;truth.x, truth.y)
-prob = TuringMuseProblem(model, params=(:σ,))
-```
+The Turing model should be conditioned on the variables which comprise
+the "data", and all other variables should be unconditioned. By
+default, any parameter which doesn't depend on another parameter will
+be estimated by MUSE, but this can be overridden by passing `params`
+as a list of symbols. All other non-conditioned and non-`params`
+variables will be considered the latent space.
 
 The `autodiff` parameter should be either
 `MuseInference.ForwardDiffBackend()` or
 `MuseInference.ZygoteBackend()`, specifying which library to use for
-automatic differenation. 
+automatic differenation. The default uses whatever the global
+`Turing.ADBACKEND` is currently set to.
+
+
+## Example
+
+```julia
+# toy hierarchical model
+Turing.@model function toy()
+    σ ~ Uniform(0, 1)
+    θ ~ Normal(0, σ)
+    z ~ MvNormal(zeros(512), exp(σ/2)*I)
+    w ~ MvNormal(z, I)
+    x ~ MvNormal(w, I)
+    y ~ MvNormal(x, I)
+    (;σ, θ, z, w, x, y)
+end
+sim = toy()()
+model = toy() | (;sim.x, sim.y)
+prob = TuringMuseProblem(model, params=(:σ, :θ))
+
+# get solution
+result = muse(prob, (σ=0.5, θ=0))
+```
+
+Here we have chosen `(σ, θ)` to be the parameters which MuseInference
+will estimate (note that the default would have only chosen `σ`). The
+observed data are `(x,y)` and the remaining `(z,w)` are the latent
+space.
 
 !!! note
 
     You can also call [`muse`](@ref), etc... directly on the model, e.g.
-    `muse(model, (σ=1,), ...)`, in which case the parameter names `params`
-    will be read from the keys of the starting point.
+    `muse(model, (σ=0.5, θ=0))`, in which case the parameter names `params`
+    will be read from the keys of provided the starting point.
+
+!!! note
+
+    The model function cannot have any of the random variables as 
+    arguments, although it can have other parameters as arguments. E.g.,
+
+    ```julia
+    # not OK
+    @model function toy(x)
+        x ~ Normal()
+        ...
+    end
+
+    # OK
+    @model function toy(σ)
+        x ~ Normal(σ)
+        ...
+    end
+    ```
 
 """
 function TuringMuseProblem(
@@ -77,24 +111,26 @@ function TuringMuseProblem(
             error("Unsupposed backend from Turing: $(Turing.ADBACKEND)")
         end
     end
+    # prevent this constructor from advancing the default RNG for more clear reproducibility
+    rng = copy(Random.default_rng())
     # model is expected to be passed in conditioned on x
     x = ComponentVector(model.context.values)
     # figure out variable names
     observed = keys(x)
-    latent = keys(delete(_namedtuple(DynPPL.VarInfo(model)), (observed..., params...)))
+    latent = keys(delete(_namedtuple(DynPPL.VarInfo(rng, model)), (observed..., params...)))
     # VarInfo for (z,θ) with both transformed
-    vi_z′_θ′ = DynPPL.VarInfo(model)
+    vi_z′_θ′ = DynPPL.VarInfo(rng, model)
     DynPPL.settrans!.((vi_z′_θ′,), true, _VarName.((latent..., params...)))
     # VarInfo for (z,θ) with only z transformed
-    vi_z′_θ = DynPPL.VarInfo(model)
+    vi_z′_θ = DynPPL.VarInfo(rng, model)
     DynPPL.settrans!.((vi_z′_θ,), true, _VarName.(latent))
     # model with all vars free
     model = DynPPL.decondition(model)
     # model for computing prior, just need any values for (x,z) to condition on here
-    vars = _namedtuple(DynPPL.evaluate!!(model)[2])
+    vars = _namedtuple(DynPPL.evaluate!!(model, rng)[2])
     model_for_prior = model | select(vars, (observed..., latent...))
     # VarInfo for θ
-    vi_θ = DynPPL.VarInfo(model_for_prior)
+    vi_θ = DynPPL.VarInfo(rng, model_for_prior)
     # VarInfo for transformed θ
     vi_θ′ = deepcopy(vi_θ)
     DynPPL.settrans!.((vi_θ′,), true, _VarName.(params))

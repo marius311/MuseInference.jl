@@ -17,6 +17,50 @@ struct SossMuseProblem{A<:AD.AbstractBackend, M<:Soss.AbstractModel, MP<:Soss.Ab
     hyper_vars
 end
 
+@doc doc"""
+    SossMuseProblem(model; params, autodiff = ForwardDiffBackend())
+
+Specify a MUSE problem with a
+[Soss](https://github.com/cscherrer/Soss.jl) model.
+
+The Soss model should be conditioned on the variables which comprise
+the "data", and all other variables should be unconditioned. By
+default, any parameter which doesn't depend on another parameter will
+be estimated by MUSE, but this can be overridden by passing `params`
+as a list of symbols. All other non-conditioned and non-`params`
+variables will be considered the latent space.
+
+The `autodiff` parameter should be either
+`MuseInference.ForwardDiffBackend()` or
+`MuseInference.ZygoteBackend()`, specifying which library to use for
+automatic differenation.
+
+## Example
+
+```julia
+# toy hierarchical problem, using MeasureTheory distributions
+funnel = Soss.@model (σ) begin
+    θ ~ MeasureTheory.Normal(0, σ)
+    z ~ MeasureTheory.Normal(0, exp(θ/2)) ^ 512
+    x ~ For(z) do zᵢ
+        MeasureTheory.Normal(zᵢ, 1)
+    end
+end
+
+sim = rand(funnel(3))
+model = funnel(3) | (;sim.x)
+prob = SossMuseProblem(model)
+
+# get solution
+result = muse(prob, (θ=0,))
+```
+
+!!! note
+
+    You can also call [`muse`](@ref), etc... directly on the model, e.g.
+    `muse(model, (θ=0,))`, in which case the parameter names `params`
+    will be read from the keys of provided the starting point.
+"""
 function SossMuseProblem(
     model::Soss.ConditionalModel; 
     params = leaf_params(model),
