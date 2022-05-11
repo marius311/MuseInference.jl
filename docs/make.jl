@@ -2,9 +2,15 @@
 # ensure in right directory and environment
 cd(dirname(@__FILE__))
 using Pkg
-Pkg.activate(".")
+if Pkg.project().name == "MuseInference" 
+    using TestEnv # you'll need TestEnv in your global environment
+    TestEnv.activate()
+end
 
 using Documenter, MuseInference, Turing
+
+# change to true to skip running doc code
+Documenter.Utilities.Selectors.disable(::Type{Documenter.Expanders.ExampleBlocks}) = false
 
 makedocs(
     sitename = "MuseInference",
@@ -18,7 +24,8 @@ makedocs(
         "devapi.md",
     ],
     checkdocs = :none,
-    strict = true,
+    doctest = false,
+    strict = false,
     modules = [MuseInference]
 )
 

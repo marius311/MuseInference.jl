@@ -1,7 +1,0 @@
-[deps]
-Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
-MCMCDiagnosticTools = "be115224-59cd-429b-ad48-344e309966f0"
-MuseInference = "43b88160-90c7-4f71-933b-9d65205cd921"
-PyPlot = "d330b81b-6aea-500a-939a-2ce795aea3ee"
-Turing = "fce5fe82-541a-59a6-adf8-730c64b5f9a0"
-Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"

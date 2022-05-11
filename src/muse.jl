@@ -41,6 +41,22 @@ Base.@kwdef mutable struct MuseResult
 end
 
 
+function Base.show(io::IO, result::MuseResult)
+    _print(μ) = @sprintf("%.4g", μ)
+    _print(μ, σ) = @sprintf("%.4g±%.3g", μ, σ)
+    print(io, "MuseResult(")
+    if result.θ != nothing && result.Σ != nothing
+        σ² = result.θ isa AbstractVector ? diag(result.Σ) : result.Σ
+        str = sprint(show, _print.(result.θ, sqrt.(σ²)))
+    elseif result.θ != nothing
+        str = sprint(show, _print.(result.θ))
+    else
+        str = ""
+    end
+    print(io, replace(str, "\"" => ""))
+    print(io,")")
+end
+
 ### MUSE solver
 
 @doc doc"""
@@ -48,32 +64,44 @@ end
     muse(prob::AbstractMuseProblem, θ₀; kwargs...)
     muse!(result::MuseResult, prob::AbstractMuseProblem, [θ₀=nothing]; kwargs...)
 
-Run the MUSE estimate. The `muse!` form resumes an existing result. If the 
-`muse` form is used instead, `θ₀` must give a starting guess for $\theta$.
+Run the MUSE estimate. The `muse!` form resumes an existing result. If
+the `muse` form is used instead, `θ₀` must give a starting guess for
+$\theta$.
 
 See [`MuseResult`](@ref) for description of return value. 
 
-Optional keyword arguments:
+Keyword arguments:
 
-* `rng` — Random number generator to use. Taken from `result.rng` or `Random.default_rng()` if not passed. 
+* `rng` — Random number generator to use. Taken from `result.rng` or
+  `Random.default_rng()` if not passed. 
 * `z₀` — Starting guess for the latent space MAP.
 * `maxsteps = 50` — Maximum number of iterations. 
-* `θ_rtol = 1e-1` — Error tolerance on $\theta$ relative to its standard deviation.
-* `∇z_logLike_atol = 1e-2` — Absolute tolerance on the $z$-gradient at the MAP solution. 
+* `θ_rtol = 1e-2` — Error tolerance on $\theta$ relative to its
+  standard deviation.
+* `∇z_logLike_atol = 1e-2` — Absolute tolerance on the $z$-gradient at
+  the MAP solution. 
 * `nsims = 100` — Number of simulations. 
 * `α = 0.7` — Step size for root-finder. 
 * `progress = false` — Show progress bar.
 * `pmap` — Parallel map function. 
 * `regularize = identity` — Apply some regularization after each step. 
-* `H⁻¹_like = nothing` — Initial guess for the inverse Jacobian of $s^{\rm MUSE}(\theta)$
-* `H⁻¹_update` — How to update `H⁻¹_like`. Should be `:sims`, `:broyden`, or `:diagonal_broyden`. 
-* `broyden_memory = Inf` — How many past steps to keep for Broyden updates. 
-* `checkpoint_filename = nothing` — Save result to a file after each iteration. 
-* `get_covariance = false` — Also call `get_H` and `get_J` to get the full covariance.
+* `H⁻¹_like = nothing` — Initial guess for the inverse Jacobian of
+  $s^{\rm MUSE}(\theta)$
+* `H⁻¹_update` — How to update `H⁻¹_like`. Should be `:sims`,
+  `:broyden`, or `:diagonal_broyden`. 
+* `broyden_memory = Inf` — How many past steps to keep for Broyden
+  updates. 
+* `checkpoint_filename = nothing` — Save result to a file after each
+  iteration. 
+* `get_covariance = false` — Also call `get_H` and `get_J` to get the
+  full covariance.
 
 """
 muse(args...; kwargs...) = muse!(MuseResult(), args...; kwargs...)
 
+@doc doc"""
+See [`muse`](@ref).
+"""
 function muse!(
     result :: MuseResult,
     prob :: AbstractMuseProblem, 
@@ -153,7 +181,7 @@ function muse!(
                 # on subsequent steps, do a Broyden's update using at
                 # most the previous `broyden_memory` steps
                 j₀ = Int(max(2, i - broyden_memory))
-                H⁻¹_like = history[j₀-1].H⁻¹_like_sims
+                H⁻¹_like′ = history[j₀-1].H⁻¹_like_sims′
                 for j = j₀:i-1
                     Δθ′      = history[j].θ′      - history[j-1].θ′
                     Δg_like′ = history[j].g_like′ - history[j-1].g_like′
@@ -199,21 +227,56 @@ function muse!(
     result.θ = θunreg
     result.gs = collect(history[end].g_like_sims)
     if get_covariance
-        get_J!(result, prob; nsims)
-        get_H!(result, prob; nsims=nsims÷10, ∇z_logLike_atol)
+        get_J!(result, prob; rng, nsims)
+        get_H!(result, prob; rng, nsims=max(1,nsims÷10), ∇z_logLike_atol)
     end
     result
 
 end
 
 
+@doc doc"""
 
+    get_H!(result::MuseResult, prob::AbstractMuseProblem, [θ₀=nothing]; kwargs...)
+
+Compute the $H$ matrix, which is part of the MUSE covariance
+computation (see [Millea & Seljak,
+2021](https://arxiv.org/abs/2112.09354)). 
+
+Positional arguments: 
+
+* `result` — `MuseResult` into which to store result
+* `prob` — `AbstractMuseProblem` being solved
+* `θ₀` — the `θ` at which to evaluate $H$ (default: `result.θ` if it
+  exists, otherwise `θ₀` must be given)
+
+Keyword arguments:
+
+* `z₀` — Starting guess for the latent space MAPs. Defaults to random
+  sample from prior.
+* `∇z_logLike_atol = 1e-2` — Absolute tolerance on the $z$-gradient at
+  the MAP solution. 
+* `rng` — Random number generator to use. Taken from `result.rng` or
+  `Random.default_rng()` if not passed. 
+* `nsims` — How many simulations to average over (default: `10`)
+* `pmap` — Parallel map function. 
+* `progress` — Show progress bar (default: `false`), 
+* `skip_errors` — Ignore any MAP that errors (default: `false`)
+* `fdm` — A `FiniteDifferenceMethod` used to compute the finite
+  difference Jacobian of AD gradients involved in computing $H$
+  (defaults to: `FiniteDifferences.central_fdm(3,1)`)
+* `step` — A guess for the finite difference step-size (defaults to
+  0.1σ for each parameter using J to estimate σ; for this reason its
+  recommended to run `get_J!` before `get_H!`). Is only a guess
+  because different choices of `fdm` may adapt this.
+
+"""
 function get_H!(
     result :: MuseResult,
     prob :: AbstractMuseProblem, 
     θ₀ = result.θ;
     fdm :: FiniteDifferenceMethod = central_fdm(3,1),
-    ∇z_logLike_atol = 1e-8,
+    ∇z_logLike_atol = 1e-2,
     rng = Random.default_rng(),
     nsims = 10, 
     step = nothing, 
@@ -278,12 +341,43 @@ function get_H!(
 end
 
 
+@doc doc"""
+
+    get_J!(result::MuseResult, prob::AbstractMuseProblem, [θ₀=nothing]; kwargs...)
+
+Compute the $J$ matrix, which is part of the MUSE covariance
+computation (see [Millea & Seljak,
+2021](https://arxiv.org/abs/2112.09354)). 
+
+Positional arguments: 
+
+* `result` — `MuseResult` into which to store result
+* `prob` — `AbstractMuseProblem` being solved
+* `θ₀` — the `θ` at which to evaluate $J$ (default: `result.θ` if it
+  exists, otherwise `θ₀` must be given)
+
+Keyword arguments:
+
+* `z₀` — Starting guess for the latent space MAPs. Defaults to random
+  sample from prior.
+* `∇z_logLike_atol = 1e-2` — Absolute tolerance on the $z$-gradient at
+  the MAP solution. 
+* `rng` — Random number generator to use. Taken from `result.rng` or
+  `Random.default_rng()` if not passed. 
+* `nsims` — How many simulations to average over (default: `100`)
+* `pmap` — Parallel map function. 
+* `progress` — Show progress bar (default: `false`), 
+* `skip_errors` — Ignore any MAP that errors (default: `false`)
+* `covariance_method` — A `CovarianceEstimator` used to compute $J$
+  (default: `SimpleCovariance(corrected=true)`)
+
+"""
 function get_J!(
     result :: MuseResult,
     prob :: AbstractMuseProblem, 
     θ₀ = nothing; 
     z₀ = nothing,
-    ∇z_logLike_atol = 1e-1,
+    ∇z_logLike_atol = 1e-2,
     rng = Random.default_rng(),
     nsims = 100, 
     pmap = _map,

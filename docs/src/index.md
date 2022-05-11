@@ -25,14 +25,14 @@ MuseInference.jl is a Julia package for computing the MUSE estimate. To install 
 pkg> add https://github.com/marius311/MuseInference.jl
 ```
 
-# Usage (with Turing.jl)
+# Example
 
 The easiest way to use MuseInference is with problems defined via the Probabilistic Programming Language, [Turing.jl](https://turing.ml/stable/).
 
 First, load up the relevant packages:
 
 ```@example 1
-using MuseInference, Random, Turing, Zygote, PyPlot, Printf, Dates
+using MuseInference, Random, Turing, Zygote, PyPlot, Printf, Dates, LinearAlgebra
 Turing.setadbackend(:zygote)
 PyPlot.ioff() # hide
 using Logging # hide
@@ -52,35 +52,36 @@ x_i &\sim {\rm Normal}(z_i, 1)
 \end{aligned}
 ```
 
-for $i=1...512$. This problem can be described by the following Turing model:
+for $i=1...2048$. This problem can be described by the following Turing model:
 ```@example 1
 @model function funnel()
     θ ~ Normal(0, 3)
-    z ~ MvNormal(zeros(512), exp(θ/2))
-    x ~ MvNormal(z, 1)
+    z ~ MvNormal(zeros(2048), exp(θ)*I)
+    x ~ MvNormal(z, I)
 end
 nothing # hide
 ```
 
-Next, let's choose a true value of $\theta=0$ and generate some simulated data:
+Next, let's choose a true value of $\theta=0$ and generate some simulated data which we'll use as "observations":
 
 ```@example 1
-Random.seed!(0)
-x = (funnel() | (θ=0,))() # draw sample of `x` to use as simulated data
+Random.seed!(1)
+(;x) = rand(funnel() | (θ=0,))
 model = funnel() | (;x)
 nothing # hide
 ```
 
-We can run HMC on the problem to compute an "exact" answer to compare against:
+We can run HMC on the problem to compute the "true" answer to compare against:
+
 
 ```@example 1
-Random.seed!(0)
+Random.seed!(2)
 sample(model, NUTS(10,0.65,init_ϵ=0.5), 10); # warmup # hide
-chain = @time sample(model, NUTS(100,0.65,init_ϵ=0.5), 500)
+chain = @time sample(model, NUTS(100, 0.65, init_ϵ=0.5), 500)
 nothing # hide
 ```
 
-We next compute the MUSE estimate for the same problem. To make the timing comparison fair, the number of MUSE simulations should be the same as the effective sample size of the chain we just ran. This is:
+We next compute the MUSE estimate for the same problem. To reach the same Monte Carlo error as HMC, the number of MUSE simulations should be the same as the effective sample size of the chain we just ran. This is:
 
 ```@example 1 
 nsims = round(Int, ess_rhat(chain)[:θ,:ess])
@@ -90,7 +91,7 @@ Running the MUSE estimate,
 
 ```@example 1
 muse(model, 0; nsims, get_covariance=true) # warmup # hide
-Random.seed!(5) # hide
+Random.seed!(3)
 muse_result = @time muse(model, 0; nsims, get_covariance=true)
 nothing # hide
 ```
@@ -98,6 +99,8 @@ nothing # hide
 Lets also try mean-field variational inference (MFVI) to compare to another approximate method.
 
 ```@example 1
+Random.seed!(4)
+vi(model, ADVI(10, 10)) # warmup # hide
 t_vi = @time @elapsed vi_result = vi(model, ADVI(10, 1000))
 nothing # hide
 ```
@@ -108,20 +111,21 @@ Now let's plot the different estimates. In this case, MUSE gives a nearly perfec
 figure(figsize=(6,5)) # hide
 axvline(0, c="k", ls="--", alpha=0.5)
 hist(collect(chain["θ"][:]), density=true, bins=15, label=@sprintf("HMC (%.1f seconds)", chain.info.stop_time - chain.info.start_time))
-θs = range(-1,1,length=1000)
+θs = range(-0.5,0.5,length=1000)
 plot(θs, pdf.(muse_result.dist, θs), label=@sprintf("MUSE (%.1f seconds)", (muse_result.time / Millisecond(1000))))
 plot(θs, pdf.(Normal(vi_result.dist.m[1], vi_result.dist.σ[1]), θs), label=@sprintf("MFVI (%.1f seconds)", t_vi))
 legend()
 xlabel(L"\theta")
 ylabel(L"\mathcal{P}(\theta\,|\,x)")
-title("512-dimensional noisy funnel")
+title("2048-dimensional noisy funnel")
 gcf() # hide
 ```
 
-The timing difference is indicative of the speedups over HMC that are possible. These can get even more dramatic as we increase dimensionality, which is why MUSE really excels on high-dimensional problems.
+The timing[^1] difference is indicative of the speedups over HMC that are possible. These get even more dramatic as we increase dimensionality, which is why MUSE really excels on high-dimensional problems.
 
+[^1]: Julia experts may wonder if the `@time` calls above aren't just mainly timing compilation, but this document is generated with hidden "warmup" calls which ensure that only the runtime is measured.
 
-# Usage (manual)
+---
 
 It is also possible to use MuseInference without Turing. The MUSE estimate requires three things:
 
@@ -159,23 +163,23 @@ It is also possible to use MuseInference without Turing. The MUSE estimate requi
 
 In all cases, `x`, `z`, and `θ`, can be of any type which supports basic arithmetic, including scalars, `Vector`s, special vector types like `ComponentArray`s, etc...
 
-We can compute the MUSE estimate for the same funnel problem as above. To do so, first we create an `MuseProblem` object which specifies the three functions:
+We can compute the MUSE estimate for the same funnel problem as above. To do so, first we create a `SimpleMuseProblem` object which specifies the three functions:
 
 ```@example 1
-prob = MuseProblem(
+prob = SimpleMuseProblem(
     x,
     function sample_x_z(rng, θ)
-        z = rand(rng, MvNormal(zeros(512), exp(θ/2)))
-        x = rand(rng, MvNormal(z, 1))
+        z = rand(rng, MvNormal(zeros(2048), exp(θ)*I))
+        x = rand(rng, MvNormal(z, I))
         (;x, z)
     end,
     function logLike(x, z, θ)
-        -(1//2) * (sum((x .- z).^2) + sum(z.^2) / exp(θ) + 512*θ)
+        -(1//2) * (sum((x .- z).^2) + sum(z.^2) / exp(θ) + 2048*θ)
     end, 
     function logPrior(θ)
         -θ^2/(2*3^2)
-    end,
-    MuseInference.ZygoteBackend()
+    end;
+    autodiff = MuseInference.ZygoteBackend()
 )
 nothing # hide
 ```
@@ -183,7 +187,7 @@ nothing # hide
 And compute the estimate:
 
 ```@example 1
-Random.seed!(5) # hide
+Random.seed!(3)
 muse_result_manual = muse(prob, 0; nsims, get_covariance=true)
 nothing # hide
 ```
@@ -193,3 +197,5 @@ This gives the same answer as before:
 ```@example 1
 (muse_result.θ[1], muse_result_manual.θ)
 ```
+
+---
