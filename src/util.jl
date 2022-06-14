@@ -21,10 +21,10 @@ _map(args...; _...) = map(args...)
 # * specifying the step-size
 # * specificying a map function (like pmap instead)
 # * (parallel-friendly) progress bar
-function pjacobian(f, fdm, x, step; pmap=_map, batch_size=1, pbar=nothing)
+function pjacobian(f, pool, fdm, x, step; pbar=nothing)
     
     x, from_vec = to_vec(x)
-    ẏs = pmap(tuple.(eachindex(x),step); batch_size) do (n, step)
+    ẏs = pmap(pool, tuple.(eachindex(x),step)) do (n, step)
         j = fdm(zero(eltype(x)), (step==nothing ? () : step)...) do ε
             xn = x[n]
             x[n] = xn + ε
@@ -68,3 +68,8 @@ function _namedtuple(cv::ComponentVector)
 end
 
 LinearAlgebra.inv(A::ComponentMatrix{<:Real, <:Symmetric}) = ComponentArray(Matrix(inv(getdata(A))), getaxes(A))
+
+
+# worker pool which just falls back to map
+struct LocalWorkerPool <: AbstractWorkerPool end
+pmap(f, ::LocalWorkerPool, args...) = map(f, args...)
