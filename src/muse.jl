@@ -276,7 +276,7 @@ function get_H!(
     θ₀ = result.θ;
     fdm :: FiniteDifferenceMethod = central_fdm(3,1),
     ∇z_logLike_atol = 1e-2,
-    rng = Random.default_rng(),
+    rng = @something(result.rng, Random.default_rng()),
     nsims = 10, 
     step = nothing, 
     pool = LocalWorkerPool(),
@@ -288,8 +288,10 @@ function get_H!(
 
     θ₀ = standardizeθ(prob, @something(θ₀, result.θ))
     𝟘 = zero(θ₀) * zero(θ₀)' # if θ::ComponentArray, helps keep component labels 
-    nsims_remaining = nsims - length(result.Hs)
+    nsims_existing = length(result.Hs)
+    nsims_remaining = nsims - nsims_existing
     (nsims_remaining <= 0) && return
+    
     pbar = progress ? RemoteProgress(nsims_remaining*(1+length(θ₀)), 0.1, "get_H: ") : nothing
     t₀ = now()
 
@@ -307,24 +309,23 @@ function get_H!(
         step = 0.1 ./ std(result.gs)
     end
 
-    # generate simulation locally, advancing rng, and saving rng state to be reused remotely
-    xs_ẑ₀s_rngs = map(1:nsims_remaining) do i
-        _rng = copy(rng)
-        (x, z) = sample_x_z(prob, rng, θ₀)
-        (x, @something(z₀, z), _rng)
-    end
-
-    # initial fit at fiducial, used as starting points for finite difference below
-    ẑ₀s_rngs = pmap(pool, xs_ẑ₀s_rngs) do (x, ẑ₀, rng)
+    rngs = split_rng(rng, nsims_remaining)
+    
+    # generate simulations and do initial fit at fiducial, used as
+    # starting points for finite difference below
+    ẑfids = pmap(pool, rngs) do rngs
+        (x, z) = sample_x_z(prob, copy(rng), θ₀)
+        ẑ₀ = @something(z₀, z)
         ẑ, = ẑ_at_θ(prob, x, ẑ₀, θ₀; ∇z_logLike_atol)
         progress && ProgressMeter.next!(pbar)
-        (ẑ, rng)
+        ẑ
     end
 
     # finite difference Jacobian
-    append!(result.Hs, skipmissing(pmap(pool_sims, ẑ₀s_rngs) do (ẑ₀, rng)
+    append!(result.Hs, skipmissing(pmap(pool_sims, ẑfids, rngs) do ẑ₀, rng
         try
             return first(pjacobian(pool_jac, fdm, θ₀, step; pbar) do θ
+                # sim is generated at θ, MAP and gradient are at fiducial θ₀
                 x, = sample_x_z(prob, copy(rng), θ)
                 ẑ, = ẑ_at_θ(prob, x, ẑ₀, θ₀; ∇z_logLike_atol)
                 ∇θ_logLike(prob, x, ẑ, θ₀, UnTransformedθ())
@@ -383,7 +384,7 @@ function get_J!(
     θ₀ = nothing; 
     z₀ = nothing,
     ∇z_logLike_atol = 1e-2,
-    rng = Random.default_rng(),
+    rng = @something(result.rng, Random.default_rng()),
     nsims = 100, 
     pool = LocalWorkerPool(),
     progress = false, 
@@ -392,20 +393,20 @@ function get_J!(
 )
 
     θ₀ = standardizeθ(prob, @something(θ₀, result.θ))
-    nsims_remaining = nsims - length(result.gs)
+    nsims_existing = length(result.gs)
+    nsims_remaining = nsims - nsims_existing
 
     if nsims_remaining > 0
 
         pbar = progress ? RemoteProgress(nsims_remaining, 0.1, "get_J: ") : nothing
 
-        xs_z₀s = map(1:nsims_remaining) do i
-            (x, z) = sample_x_z(prob, rng, θ₀)
-            (x, @something(z₀, z))
-        end
+        rngs = split_rng(rng, nsims)[nsims_existing+1:end]
 
-        append!(result.gs, skipmissing(pmap(xs_z₀s, fill(θ₀,nsims_remaining)) do (x, z₀), θ₀
+        append!(result.gs, skipmissing(pmap(pool, rngs) do rng
             try
-                ẑ, = ẑ_at_θ(prob, x, z₀, θ₀; ∇z_logLike_atol)
+                (x, z) = sample_x_z(prob, rng, θ₀)
+                ẑ₀ = @something(z₀, z)
+                ẑ, = ẑ_at_θ(prob, x, ẑ₀, θ₀; ∇z_logLike_atol)
                 g = ∇θ_logLike(prob, x, ẑ, θ₀, UnTransformedθ())
                 progress && ProgressMeter.next!(pbar)
                 return g

@@ -72,4 +72,18 @@ LinearAlgebra.inv(A::ComponentMatrix{<:Real, <:Symmetric}) = ComponentArray(Matr
 
 # worker pool which just falls back to map
 struct LocalWorkerPool <: AbstractWorkerPool end
-pmap(f, ::LocalWorkerPool, args...) = map(f, args...)
+Distributed.pmap(f, ::LocalWorkerPool, args...) = map(f, args...)
+
+# worker pool which is equivalent to passing batch_size to pmap
+struct BatchWorkerPool <: AbstractWorkerPool
+    pool
+    batch_size
+end
+Distributed.pmap(f, bpool::BatchWorkerPool, args...) = pmap(f, bpool.pool, args...; bpool.batch_size)
+
+# split one rng into a bunch in a way that works with generic RNGs
+function split_rng(rng::AbstractRNG, N)
+    map(1:N) do i
+        Random.seed!(copy(rng), rand(rng, UInt32))
+    end
+end
