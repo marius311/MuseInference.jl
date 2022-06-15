@@ -73,8 +73,8 @@ function SossMuseProblem(
     hyper_vars = (((k, eltype(sim[k])) for k in keys(sim) if k in params)...,)
     latent_vars = keys(delete(sim, (observed_vars..., first.(hyper_vars)...)))
     model_for_prior = Soss.likelihood(Soss.Model(model), first.(hyper_vars)...)(Soss.argvals(model))
-    xform_z = Soss.xform(model | select(sim, first.(hyper_vars)))
-    xform_θ = Soss.xform(model | select(sim, latent_vars))
+    xform_z = Soss.as(model | select(sim, first.(hyper_vars)))
+    xform_θ = Soss.as(model | select(sim, latent_vars))
     SossMuseProblem(
         autodiff,
         model,
