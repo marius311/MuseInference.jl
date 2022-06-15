@@ -83,7 +83,7 @@ Keyword arguments:
 * `nsims = 100` — Number of simulations. 
 * `α = 0.7` — Step size for root-finder. 
 * `progress = false` — Show progress bar.
-* `pmap` — Parallel map function. 
+* `pool :: AbstractWorkerPool` — Worker pool for parallelization.
 * `regularize = identity` — Apply some regularization after each step. 
 * `H⁻¹_like = nothing` — Initial guess for the inverse Jacobian of
   $s^{\rm MUSE}(\theta)$
@@ -114,8 +114,7 @@ function muse!(
     nsims = 100,
     α = 0.7,
     progress = false,
-    pmap = _map,
-    batch_size = 1,
+    pool = LocalWorkerPool(),
     regularize = identity,
     H⁻¹_like′ = nothing,
     H⁻¹_update = :sims,
@@ -138,7 +137,7 @@ function muse!(
     ẑs = [[@something(z₀, sample_x_z(prob, _rng, θ).z)]; last.(xs_ẑs_sims)]
 
     # set up progress bar
-    pbar = progress ? RemoteProgress((maxsteps-length(result.history))*(nsims+1)÷batch_size, 0.1, "MUSE: ") : nothing
+    pbar = progress ? RemoteProgress((maxsteps-length(result.history))*(nsims+1), 0.1, "MUSE: ") : nothing
 
     try
     
@@ -157,7 +156,7 @@ function muse!(
             end
 
             # MUSE gradient
-            gẑs = pmap(xs, ẑs, fill(θ,length(xs)); batch_size) do x, ẑ_prev, θ
+            gẑs = pmap(pool, xs, ẑs, fill(θ,length(xs))) do x, ẑ_prev, θ
                 local ẑ, history = ẑ_at_θ(prob, x, ẑ_prev, θ; ∇z_logLike_atol)
                 g  = ∇θ_logLike(prob, x, ẑ, θ,  UnTransformedθ())
                 g′ = ∇θ_logLike(prob, x, ẑ, θ′, Transformedθ())
@@ -277,11 +276,10 @@ function get_H!(
     θ₀ = result.θ;
     fdm :: FiniteDifferenceMethod = central_fdm(3,1),
     ∇z_logLike_atol = 1e-2,
-    rng = Random.default_rng(),
+    rng = @something(result.rng, Random.default_rng()),
     nsims = 10, 
     step = nothing, 
-    pmap = _map,
-    batch_size = 1,
+    pool = LocalWorkerPool(),
     pmap_over = :auto,
     progress = false,
     skip_errors = false,
@@ -290,10 +288,20 @@ function get_H!(
 
     θ₀ = standardizeθ(prob, @something(θ₀, result.θ))
     𝟘 = zero(θ₀) * zero(θ₀)' # if θ::ComponentArray, helps keep component labels 
-    nsims_remaining = nsims - length(result.Hs)
+    nsims_existing = length(result.Hs)
+    nsims_remaining = nsims - nsims_existing
     (nsims_remaining <= 0) && return
-    pbar = progress ? RemoteProgress(nsims_remaining*(1+length(θ₀))÷batch_size, 0.1, "get_H: ") : nothing
+    
+    pbar = progress ? RemoteProgress(nsims_remaining*(1+length(θ₀)), 0.1, "get_H: ") : nothing
     t₀ = now()
+
+    # determine if we parallelize over simulations or over columns of
+    # the finite-difference jacobian
+    if (pmap_over == :jac || ((pmap_over == :auto) && (length(θ₀) > nsims_remaining)))
+        pool_sims, pool_jac = (LocalWorkerPool(), pool)
+    else
+        pool_sims, pool_jac = (pool, LocalWorkerPool())
+    end
 
     # default to finite difference step size of 0.1σ with σ roughly
     # estimated from g sims, if we have them
@@ -301,25 +309,23 @@ function get_H!(
         step = 0.1 ./ std(result.gs)
     end
 
-    # generate simulation locally, advancing rng, and saving rng state to be reused remotely
-    xs_ẑ₀s_rngs = map(1:nsims_remaining) do i
-        _rng = copy(rng)
-        (x, z) = sample_x_z(prob, rng, θ₀)
-        (x, @something(z₀, z), _rng)
-    end
-
-    # initial fit at fiducial, used as starting points for finite difference below
-    ẑ₀s_rngs = pmap(xs_ẑ₀s_rngs; batch_size) do (x, ẑ₀, rng)
+    rngs = split_rng(rng, nsims_remaining)
+    
+    # generate simulations and do initial fit at fiducial, used as
+    # starting points for finite difference below
+    ẑfids = pmap(pool, rngs) do rngs
+        (x, z) = sample_x_z(prob, copy(rng), θ₀)
+        ẑ₀ = @something(z₀, z)
         ẑ, = ẑ_at_θ(prob, x, ẑ₀, θ₀; ∇z_logLike_atol)
         progress && ProgressMeter.next!(pbar)
-        (ẑ, rng)
+        ẑ
     end
 
     # finite difference Jacobian
-    pmap_sims, pmap_jac = (pmap_over == :jac || (pmap_over == :auto && length(θ₀) > nsims_remaining)) ? (_map, pmap) : (pmap, _map)
-    append!(result.Hs, skipmissing(pmap_sims(ẑ₀s_rngs; batch_size) do (ẑ₀, rng)
+    append!(result.Hs, skipmissing(pmap(pool_sims, ẑfids, rngs) do ẑ₀, rng
         try
-            return first(pjacobian(fdm, θ₀, step; pmap=pmap_jac, batch_size, pbar) do θ
+            return first(pjacobian(pool_jac, fdm, θ₀, step; pbar) do θ
+                # sim is generated at θ, MAP and gradient are at fiducial θ₀
                 x, = sample_x_z(prob, copy(rng), θ)
                 ẑ, = ẑ_at_θ(prob, x, ẑ₀, θ₀; ∇z_logLike_atol)
                 ∇θ_logLike(prob, x, ẑ, θ₀, UnTransformedθ())
@@ -378,30 +384,29 @@ function get_J!(
     θ₀ = nothing; 
     z₀ = nothing,
     ∇z_logLike_atol = 1e-2,
-    rng = Random.default_rng(),
+    rng = @something(result.rng, Random.default_rng()),
     nsims = 100, 
-    pmap = _map,
-    batch_size = 1,
+    pool = LocalWorkerPool(),
     progress = false, 
     skip_errors = false,
     covariance_method = SimpleCovariance(corrected=true),
 )
 
     θ₀ = standardizeθ(prob, @something(θ₀, result.θ))
-    nsims_remaining = nsims - length(result.gs)
+    nsims_existing = length(result.gs)
+    nsims_remaining = nsims - nsims_existing
 
     if nsims_remaining > 0
 
-        pbar = progress ? RemoteProgress(nsims_remaining÷batch_size, 0.1, "get_J: ") : nothing
+        pbar = progress ? RemoteProgress(nsims_remaining, 0.1, "get_J: ") : nothing
 
-        xs_z₀s = map(1:nsims_remaining) do i
-            (x, z) = sample_x_z(prob, rng, θ₀)
-            (x, @something(z₀, z))
-        end
+        rngs = split_rng(rng, nsims)[nsims_existing+1:end]
 
-        append!(result.gs, skipmissing(pmap(xs_z₀s, fill(θ₀,nsims_remaining); batch_size) do (x, z₀), θ₀
+        append!(result.gs, skipmissing(pmap(pool, rngs) do rng
             try
-                ẑ, = ẑ_at_θ(prob, x, z₀, θ₀; ∇z_logLike_atol)
+                (x, z) = sample_x_z(prob, rng, θ₀)
+                ẑ₀ = @something(z₀, z)
+                ẑ, = ẑ_at_θ(prob, x, ẑ₀, θ₀; ∇z_logLike_atol)
                 g = ∇θ_logLike(prob, x, ẑ, θ₀, UnTransformedθ())
                 progress && ProgressMeter.next!(pbar)
                 return g
