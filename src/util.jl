@@ -68,3 +68,14 @@ function _namedtuple(cv::ComponentVector)
 end
 
 LinearAlgebra.inv(A::ComponentMatrix{<:Real, <:Symmetric}) = ComponentArray(Matrix(inv(getdata(A))), getaxes(A))
+
+# NamedTupleTools's is broken for Zygote
+function select(nt::NamedTuple, ks)
+    vals = map(k -> nt[k], ks)
+    NamedTuple{ks}(vals)
+end
+
+# see https://github.com/JuliaDiff/ForwardDiff.jl/issues/593
+function Random.randn!(rng::AbstractRNG, A::Array{<:ForwardDiff.Dual})
+    A .= randn!(rng, ForwardDiff.value.(A))
+end

@@ -28,8 +28,8 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 UnPack = "3a884ed6-31ef-47d7-9d2a-63182c4928ed"
 
 [compat]
-AbstractDifferentiation = "0.2.1"
-ComponentArrays = "0.11.7"
+AbstractDifferentiation = "0.4.3" # has all the backends
+ComponentArrays = "0.12.4, 0.13" # min set by https://github.com/jonniedie/ComponentArrays.jl/pull/151
 CovarianceEstimation = "0.2.7"
 Distributions = "0.25.36"
 FileIO = "1.11"

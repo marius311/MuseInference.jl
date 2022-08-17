@@ -7,13 +7,23 @@ import ComponentArrays: ComponentVector
 
 export TuringMuseProblem
 
+
+struct PartialTransformation{T} <: DynPPL.AbstractTransformation 
+    transformed_vns :: T
+end
+
+function DynPPL.istrans(vi::DynPPL.SimpleVarInfo{NT,T,<:PartialTransformation}, vn::DynPPL.VarName) where {NT,T}
+    vn in vi.transformation.transformed_vns
+end
+
+
 struct TuringMuseProblem{A<:AD.AbstractBackend, M<:Turing.Model} <: AbstractMuseProblem
     
     autodiff :: A
     model :: M
     model_for_prior
-    vi_z′_θ
-    vi_z′_θ′
+    trans_z′_θ
+    trans_z′_θ′
     vi_θ
     vi_θ′
     x
@@ -118,29 +128,26 @@ function TuringMuseProblem(
     # figure out variable names
     observed = keys(x)
     latent = keys(delete(_namedtuple(DynPPL.VarInfo(rng, model)), (observed..., params...)))
-    # VarInfo for (z,θ) with both transformed
-    vi_z′_θ′ = DynPPL.VarInfo(rng, model)
-    DynPPL.settrans!.((vi_z′_θ′,), true, _VarName.((latent..., params...)))
-    # VarInfo for (z,θ) with only z transformed
-    vi_z′_θ = DynPPL.VarInfo(rng, model)
-    DynPPL.settrans!.((vi_z′_θ,), true, _VarName.(latent))
+    # transform saying that both (z,θ) are transformed
+    trans_z′_θ′ = PartialTransformation(_VarName.((latent..., params...)))
+    # transform saying only z is transformed
+    trans_z′_θ  = PartialTransformation(_VarName.(latent))
     # model with all vars free
     model = DynPPL.decondition(model)
     # model for computing prior, just need any values for (x,z) to condition on here
     vars = _namedtuple(DynPPL.evaluate!!(model, rng)[2])
     model_for_prior = model | select(vars, (observed..., latent...))
-    # VarInfo for θ
+    # VarInfos for transforming θ back and forth (can't do this with SimpleVarInfo yet?)
     vi_θ = DynPPL.VarInfo(rng, model_for_prior)
-    # VarInfo for transformed θ
     vi_θ′ = deepcopy(vi_θ)
-    DynPPL.settrans!.((vi_θ′,), true, _VarName.(params))
+    DynPPL.settrans!!.((vi_θ′,), true, _VarName.(params))
 
     TuringMuseProblem(
         autodiff,
         model,
         model_for_prior,
-        vi_z′_θ,
-        vi_z′_θ′,
+        trans_z′_θ,
+        trans_z′_θ′,
         vi_θ,
         vi_θ′,
         x,
@@ -162,7 +169,7 @@ function inv_transform_θ(prob::TuringMuseProblem, θ)
     vi = deepcopy(prob.vi_θ)
     DynPPL.setval!(vi, θ)
     for k in keys(θ)
-        DynPPL.settrans!(vi, true, _VarName(k))
+        DynPPL.settrans!!(vi, true, _VarName(k))
     end
     DynPPL.invlink!(vi, DynPPL.SampleFromPrior())
     ComponentVector(vi)
@@ -172,35 +179,34 @@ standardizeθ(prob::TuringMuseProblem, θ::NamedTuple) = 1f0 * ComponentVector(�
 standardizeθ(prob::TuringMuseProblem, θ::Number) = 
     length(prob.hyper_vars) == 1 ? standardizeθ(prob, (;θ)) : error("Invalid θ type for this problem.")
 
+function logLike(prob::TuringMuseProblem, x, z, θ, θ_space)
+    trans = is_transformed(θ_space) ? prob.trans_z′_θ′ : prob.trans_z′_θ
+    vi = DynPPL.SimpleVarInfo((;x..., z..., θ...), 0, trans)
+    DynPPL.logjoint(prob.model, vi)
+end
+    
 function logPriorθ(prob::TuringMuseProblem, θ, θ_space)
-    vi = is_transformed(θ_space) ? prob.vi_θ′ : prob.vi_θ
-    DynPPL.logprior(prob.model_for_prior, DynPPL.VarInfo(vi, θ))
+    trans = is_transformed(θ_space) ? prob.trans_z′_θ′ : prob.trans_z′_θ
+    vi = DynPPL.SimpleVarInfo((;θ...), 0, trans)
+    DynPPL.logprior(prob.model_for_prior, vi)
 end
 
 function ∇θ_logLike(prob::TuringMuseProblem, x, z, θ, θ_space)
-    model = DynPPL.condition(prob.model, x)
-    vi = is_transformed(θ_space) ? prob.vi_z′_θ′ : prob.vi_z′_θ
-    first(AD.gradient(prob.autodiff, θ -> DynPPL.logjoint(model, DynPPL.VarInfo(vi, z, θ)), θ))
+    first(AD.gradient(prob.autodiff, θ -> logLike(prob, x, z, θ, θ_space), θ))
 end
 
 function ẑ_at_θ(prob::TuringMuseProblem, x, z₀, θ; ∇z_logLike_atol)
-    model = DynPPL.condition(prob.model, x)
-    neglogp(z) = -DynPPL.logjoint(model, DynPPL.VarInfo(prob.vi_z′_θ, z, θ))
-    soln = Optim.optimize(optim_only_fg!(neglogp, prob.autodiff), z₀, Optim.LBFGS(), Optim.Options(g_tol=∇z_logLike_atol))
+    neglogLike(z) = -logLike(prob, x, z, θ, UnTransformedθ())
+    soln = Optim.optimize(optim_only_fg!(neglogLike, prob.autodiff), z₀, Optim.LBFGS(), Optim.Options(g_tol=∇z_logLike_atol))
     _check_optim_soln(soln)
     soln.minimizer, soln
 end
 
 function sample_x_z(prob::TuringMuseProblem, rng::AbstractRNG, θ)
     model = DynPPL.condition(prob.model, θ)
-    vi = DynPPL.VarInfo(rng, model)
-    vars_untransformed = map(copy, _namedtuple(vi))
-    DynPPL.link!(vi, DynPPL.SampleFromPrior())
-    vars_transformed = map(copy, _namedtuple(vi))
-    (;
-        x = ComponentVector(select(vars_untransformed, prob.observed_vars)),
-        z = ComponentVector(select(vars_transformed,   prob.latent_vars))
-    )
+    vi = DynPPL.SimpleVarInfo((;), 0, prob.trans_z′_θ)
+    vars = DynPPL.values_as(last(DynPPL.evaluate!!(model, rng, vi)), NamedTuple)
+    (x = ComponentVector(select(vars, prob.observed_vars)), z = ComponentVector(select(vars, prob.latent_vars)))
 end
 
 
@@ -219,35 +225,9 @@ end
 
 ComponentVector(vi::DynPPL.VarInfo) = ComponentVector(_namedtuple(vi))
 
-function DynPPL.VarInfo(vi::DynPPL.TypedVarInfo, x::Union{NamedTuple,ComponentVector}, xs::Union{NamedTuple,ComponentVector}...)
-    DynPPL.VarInfo(vi, merge(map(_namedtuple, (x, xs...))...))
-end
-
-function DynPPL.VarInfo(vi::DynPPL.TypedVarInfo, x::NamedTuple)
-    T = promote_type(map(eltype, values(x))..., map(eltype, _namedtuple(values(vi)))...) # if x is ForwardDiff Duals
-    DynPPL.VarInfo(
-        NamedTuple{keys(vi.metadata)}(map(keys(vi.metadata),values(vi.metadata)) do k,v
-            DynPPL.Metadata(
-                v.idcs,
-                v.vns,
-                v.ranges,
-                atleast1d(getfield(x,k)),
-                v.dists,
-                v.gids,
-                v.orders,
-                v.flags,
-            )
-        end),
-        Base.RefValue{T}(DynPPL.getlogp(vi)),
-        vi.num_produce
-    )
-end
-
-DynPPL.condition(model::DynPPL.Model, x::ComponentVector) = DynPPL.condition(model, _namedtuple(x))
+DynPPL.condition(model::DynPPL.Model, x::ComponentVector) = DynPPL.condition(model, (;x...))
 _VarName(x::Symbol) = DynPPL.VarName{x}()
 
-atleast1d(x::Number) = [x]
-atleast1d(x::AbstractVector) = x
 
 _params_from_θ₀(θ₀::Number) = (:θ,)
 _params_from_θ₀(θ₀) = keys(θ₀)

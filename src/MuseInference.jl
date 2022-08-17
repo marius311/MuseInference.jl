@@ -12,7 +12,7 @@ using FiniteDifferences
 using ForwardDiff
 using LinearAlgebra
 using Markdown
-using NamedTupleTools
+using NamedTupleTools: merge, delete
 using Optim
 using Printf
 using ProgressMeter
