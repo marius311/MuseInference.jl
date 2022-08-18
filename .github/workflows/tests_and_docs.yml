@@ -10,11 +10,15 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        julia-version: ['1.7', '1.8']
+      fail-fast: false
     steps:
       - uses: actions/checkout@v2
       - uses: julia-actions/setup-julia@v1
         with:
-          version: '1.7'
+          version: ${{ matrix.julia-version }}
       - uses: actions/setup-python@v2
         with:
           python-version: '3.8'
@@ -25,7 +29,7 @@ jobs:
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # If authenticating with GitHub Actions token
-          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }} # If authenticating with SSH deploy key
-          BUILD_DOCS: "1"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # if authenticating with GitHub Actions token
+          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }} # if authenticating with SSH deploy key
+          BUILD_DOCS: ${{ matrix.julia-version == '1.7' }} # only build/deploy docs from one version
         timeout-minutes: 30
