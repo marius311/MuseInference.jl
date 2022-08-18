@@ -21,10 +21,10 @@ _map(args...; _...) = map(args...)
 # * specifying the step-size
 # * specificying a map function (like pmap instead)
 # * (parallel-friendly) progress bar
-function pjacobian(f, fdm, x, step; pmap=_map, batch_size=1, pbar=nothing)
+function pjacobian(f, pool, fdm, x, step; pbar=nothing)
     
     x, from_vec = to_vec(x)
-    ẏs = pmap(tuple.(eachindex(x),step); batch_size) do (n, step)
+    ẏs = pmap(pool, tuple.(eachindex(x),step)) do (n, step)
         j = fdm(zero(eltype(x)), (step==nothing ? () : step)...) do ε
             xn = x[n]
             x[n] = xn + ε
@@ -84,3 +84,21 @@ end
 # https://github.com/JuliaDiff/AbstractDifferentiation.jl/pull/62 is merged
 AD.gradient(f, args...; backend::AD.AbstractBackend) = AD.gradient(backend, f, args...)
 AD.jacobian(f, args...; backend::AD.AbstractBackend) = AD.jacobian(backend, f, args...)
+
+# worker pool which just falls back to map
+struct LocalWorkerPool <: AbstractWorkerPool end
+Distributed.pmap(f, ::LocalWorkerPool, args...) = map(f, args...)
+
+# worker pool which is equivalent to passing batch_size to pmap
+struct BatchWorkerPool <: AbstractWorkerPool
+    pool
+    batch_size
+end
+Distributed.pmap(f, bpool::BatchWorkerPool, args...) = pmap(f, bpool.pool, args...; bpool.batch_size)
+
+# split one rng into a bunch in a way that works with generic RNGs
+function split_rng(rng::AbstractRNG, N)
+    map(1:N) do i
+        Random.seed!(copy(rng), rand(rng, UInt32))
+    end
+end

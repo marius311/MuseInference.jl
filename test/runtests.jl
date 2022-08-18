@@ -32,8 +32,6 @@ rng = StableRNG(0)
 
     end
 
-    ##
-
     @testset "Soss w/ Distributions" begin 
 
         soss_funnel = Soss.@model (σ) begin
