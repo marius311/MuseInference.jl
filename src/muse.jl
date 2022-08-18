@@ -226,60 +226,12 @@ function muse!(
     result.θ = θunreg
     result.gs = collect(history[end].g_like_sims)
     if get_covariance
-        get_J!(result, prob; rng, nsims)
+        get_J!(result, prob; rng, nsims, ∇z_logLike_atol)
         get_H!(result, prob; rng, nsims=max(1,nsims÷10), ∇z_logLike_atol)
     end
     result
 
 end
-
-
-function get_hᵢ_finite_diff(prob, rng, θ̄)
-    
-end
-
-function get_hᵢ_implicit_diff(prob, rng, θ̄)
-
-    rng₀ = copy(rng)
-    θ̄ = standardizeθ(prob, θ̄)
-    (x, z) = sample_x_z(prob, rng, θ̄)
-    ẑ, = ẑ_at_θ(prob, x, 0z, θ̄, ∇z_logLike_atol=1e-1)
-
-    ad_fwd, ad_rev = AD.second_lowest(prob.autodiff), AD.lowest(prob.autodiff)
-
-    # non-implicit-diff term
-    H1 = first(AD.jacobian(θ̄, backend=ad_fwd) do θ′
-        first(AD.gradient(θ̄, backend=ad_fwd) do θ
-            logLike(prob, sample_x_z(prob, copy(rng₀), θ).x, ẑ, θ′, UnTransformedθ())
-        end)
-    end)
-
-    # term involving dzMAP/dθ via implicit-diff (w/ conjugate-gradient linear solve)
-    dFdθ = first(AD.jacobian(θ̄, backend=ad_fwd) do θ
-        first(AD.gradient(ẑ, backend=ad_rev) do z
-            logLike(prob, x, z, θ, UnTransformedθ())
-        end)
-    end)
-    dFdθ1 = first(AD.jacobian(θ̄, backend=ad_fwd) do θ
-        first(AD.gradient(ẑ, backend=ad_rev) do z
-            logLike(prob, sample_x_z(prob, copy(rng₀), θ).x, z, θ̄, UnTransformedθ())
-        end)
-    end)
-    A = LinearMap(length(z), isposdef=true, issymmetric=true, ishermitian=true) do w
-        # using α like this is basically a JVP by-hand, since
-        # AbstractDifferentiation doesn't have JVP
-        first(AD.jacobian(0, backend=ad_fwd) do α
-            first(AD.gradient(ẑ + α * w, backend=ad_rev) do z
-                logLike(prob, x, z, θ̄, UnTransformedθ())
-            end)
-        end)
-    end
-    H2 = -(dFdθ' * cg(A, dFdθ1))
-
-    H1 + H2
-
-end
-
 
 
 @doc doc"""
@@ -316,6 +268,13 @@ Keyword arguments:
   0.1σ for each parameter using J to estimate σ; for this reason its
   recommended to run `get_J!` before `get_H!`). Is only a guess
   because different choices of `fdm` may adapt this.
+* `implicit_diff` — Whether to use experimental implicit
+  differentiation, rather than finite differences. Will require 2nd
+  order AD through your `logLike` so pay close attention to your
+  `prob.autodiff`. Either
+  `AD.HigherOrderBackend((AD.ForwardDiffBackend(),
+  AD.ZygoteBackend()))` or `AD.ForwardDiffBackend()` are recommended
+  (default: `false`)
 
 """
 function get_H!(
@@ -331,7 +290,8 @@ function get_H!(
     pmap_over = :auto,
     progress = false,
     skip_errors = false,
-    z₀ = nothing
+    z₀ = nothing,
+    implicit_diff = false
 )
 
     θ₀ = standardizeθ(prob, @something(θ₀, result.θ))
@@ -340,53 +300,114 @@ function get_H!(
     nsims_remaining = nsims - nsims_existing
     (nsims_remaining <= 0) && return
     
-    pbar = progress ? RemoteProgress(nsims_remaining*(1+length(θ₀)), 0.1, "get_H: ") : nothing
     t₀ = now()
 
-    # determine if we parallelize over simulations or over columns of
-    # the finite-difference jacobian
-    if (pmap_over == :jac || ((pmap_over == :auto) && (length(θ₀) > nsims_remaining)))
-        pool_sims, pool_jac = (LocalWorkerPool(), pool)
-    else
-        pool_sims, pool_jac = (pool, LocalWorkerPool())
-    end
-
-    # default to finite difference step size of 0.1σ with σ roughly
-    # estimated from g sims, if we have them
-    if step == nothing && !isempty(result.gs)
-        step = 0.1 ./ std(result.gs)
-    end
-
     rngs = split_rng(rng, nsims_remaining)
-    
-    # generate simulations and do initial fit at fiducial, used as
-    # starting points for finite difference below
-    ẑfids = pmap(pool, rngs) do rngs
-        (x, z) = sample_x_z(prob, copy(rng), θ₀)
-        ẑ₀ = @something(z₀, z)
-        ẑ, = ẑ_at_θ(prob, x, ẑ₀, θ₀; ∇z_logLike_atol)
-        progress && ProgressMeter.next!(pbar)
-        ẑ
-    end
 
-    # finite difference Jacobian
-    append!(result.Hs, skipmissing(pmap(pool_sims, ẑfids, rngs) do ẑ₀, rng
-        try
-            return first(pjacobian(pool_jac, fdm, θ₀, step; pbar) do θ
-                # sim is generated at θ, MAP and gradient are at fiducial θ₀
-                x, = sample_x_z(prob, copy(rng), θ)
-                ẑ, = ẑ_at_θ(prob, x, ẑ₀, θ₀; ∇z_logLike_atol)
-                ∇θ_logLike(prob, x, ẑ, θ₀, UnTransformedθ())
-            end)
-        catch err
-            if skip_errors && !(err isa InterruptException)
-                @warn err
-                return missing
-            else
-                rethrow(err)
+    if implicit_diff
+
+        pbar = progress ? RemoteProgress(nsims_remaining, 0.1, "get_H: ") : nothing
+
+        append!(result.Hs, skipmissing(pmap(pool, rngs) do rng
+
+            try
+
+                (x, z) = sample_x_z(prob, copy(rng), θ₀)
+                ẑ, = ẑ_at_θ(prob, x, 0z, θ₀, ∇z_logLike_atol=1e-1)
+            
+                ad_fwd, ad_rev = AD.second_lowest(prob.autodiff), AD.lowest(prob.autodiff)
+            
+                # non-implicit-diff term
+                H1 = first(AD.jacobian(θ₀, backend=ad_fwd) do θ′
+                    first(AD.gradient(θ₀, backend=ad_fwd) do θ
+                        logLike(prob, sample_x_z(prob, copy(rng), θ).x, ẑ, θ′, UnTransformedθ())
+                    end)
+                end)
+            
+                # term involving dzMAP/dθ via implicit-diff (w/ conjugate-gradient linear solve)
+                dFdθ = first(AD.jacobian(θ₀, backend=ad_fwd) do θ
+                    first(AD.gradient(ẑ, backend=ad_rev) do z
+                        logLike(prob, x, z, θ, UnTransformedθ())
+                    end)
+                end)
+                dFdθ1 = first(AD.jacobian(θ₀, backend=ad_fwd) do θ
+                    first(AD.gradient(ẑ, backend=ad_rev) do z
+                        logLike(prob, sample_x_z(prob, copy(rng), θ).x, z, θ₀, UnTransformedθ())
+                    end)
+                end)
+                A = LinearMap(length(z), isposdef=true, issymmetric=true, ishermitian=true) do w
+                    # this is effectively a by-hand JVP
+                    first(AD.jacobian(0, backend=ad_fwd) do α
+                        first(AD.gradient(ẑ + α * w, backend=ad_rev) do z
+                            logLike(prob, x, z, θ₀, UnTransformedθ())
+                        end)
+                    end)
+                end
+                H2 = -(dFdθ' * cg(A, dFdθ1))
+
+                H = H1 + H2
+                progress && ProgressMeter.next!(pbar)
+                return H
+        
+            catch err
+                if skip_errors && !(err isa InterruptException)
+                    @warn err
+                    return missing
+                else
+                    rethrow(err)
+                end
             end
+
+        end))
+
+    else
+
+        pbar = progress ? RemoteProgress(nsims_remaining*(1+length(θ₀)), 0.1, "get_H: ") : nothing
+
+        # default to finite difference step size of 0.1σ with σ roughly
+        # estimated from g sims, if we have them
+        if step == nothing && !isempty(result.gs)
+            step = 0.1 ./ std(result.gs)
         end
-    end))
+
+        # determine if we parallelize over simulations or over columns of
+        # the finite-difference jacobian
+        if (pmap_over == :jac || ((pmap_over == :auto) && (length(θ₀) > nsims_remaining)))
+            pool_sims, pool_jac = (LocalWorkerPool(), pool)
+        else
+            pool_sims, pool_jac = (pool, LocalWorkerPool())
+        end
+
+        # generate simulations and do initial fit at fiducial, used as
+        # starting points for finite difference below
+        ẑfids = pmap(pool, rngs) do rngs
+            (x, z) = sample_x_z(prob, copy(rng), θ₀)
+            ẑ₀ = @something(z₀, z)
+            ẑ, = ẑ_at_θ(prob, x, ẑ₀, θ₀; ∇z_logLike_atol)
+            progress && ProgressMeter.next!(pbar)
+            ẑ
+        end
+
+        # finite difference Jacobian
+        append!(result.Hs, skipmissing(pmap(pool_sims, ẑfids, rngs) do ẑ₀, rng
+            try
+                return first(pjacobian(pool_jac, fdm, θ₀, step; pbar) do θ
+                    # sim is generated at θ, MAP and gradient are at fiducial θ₀
+                    x, = sample_x_z(prob, copy(rng), θ)
+                    ẑ, = ẑ_at_θ(prob, x, ẑ₀, θ₀; ∇z_logLike_atol)
+                    ∇θ_logLike(prob, x, ẑ, θ₀, UnTransformedθ())
+                end)
+            catch err
+                if skip_errors && !(err isa InterruptException)
+                    @warn err
+                    return missing
+                else
+                    rethrow(err)
+                end
+            end
+        end))
+
+    end
  
     result.H = (θ₀ isa Number) ? mean(first.(result.Hs)) : (mean(result.Hs) .+ 𝟘)
     result.time += now() - t₀
