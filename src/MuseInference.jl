@@ -10,7 +10,9 @@ using Distributions
 using FileIO
 using FiniteDifferences
 using ForwardDiff
+using IterativeSolvers
 using LinearAlgebra
+using LinearMaps
 using Markdown
 using NamedTupleTools: merge, delete
 using Optim

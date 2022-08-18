@@ -28,6 +28,11 @@ the original space. Defaults to identity function.
 inv_transform_θ(prob::AbstractMuseProblem, θ) = θ
 
 
+function logLike end
+logLike(prob::AbstractMuseProblem, x, z, θ, θ_space) = 
+    logLike(prob::AbstractMuseProblem, x, z, θ)
+
+
 @doc doc"""
 Return the gradient of the joint log likelihood with respect to hyper
 parameters `θ`, evaluated at data `x` and latent space `z`. The

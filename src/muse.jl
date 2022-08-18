@@ -235,6 +235,54 @@ function muse!(
 end
 
 
+function get_hᵢ_finite_diff(prob, rng, θ̄)
+    
+end
+
+function get_hᵢ_implicit_diff(prob, rng, θ̄)
+
+    rng₀ = copy(rng)
+    θ̄ = standardizeθ(prob, θ̄)
+    (x, z) = sample_x_z(prob, rng, θ̄)
+    ẑ, = ẑ_at_θ(prob, x, 0z, θ̄, ∇z_logLike_atol=1e-1)
+
+    ad_fwd, ad_rev = AD.second_lowest(prob.autodiff), AD.lowest(prob.autodiff)
+
+    # non-implicit-diff term
+    H1 = first(AD.jacobian(θ̄, backend=ad_fwd) do θ′
+        first(AD.gradient(θ̄, backend=ad_fwd) do θ
+            logLike(prob, sample_x_z(prob, copy(rng₀), θ).x, ẑ, θ′, UnTransformedθ())
+        end)
+    end)
+
+    # term involving dzMAP/dθ via implicit-diff (w/ conjugate-gradient linear solve)
+    dFdθ = first(AD.jacobian(θ̄, backend=ad_fwd) do θ
+        first(AD.gradient(ẑ, backend=ad_rev) do z
+            logLike(prob, x, z, θ, UnTransformedθ())
+        end)
+    end)
+    dFdθ1 = first(AD.jacobian(θ̄, backend=ad_fwd) do θ
+        first(AD.gradient(ẑ, backend=ad_rev) do z
+            logLike(prob, sample_x_z(prob, copy(rng₀), θ).x, z, θ̄, UnTransformedθ())
+        end)
+    end)
+    A = LinearMap(length(z), isposdef=true, issymmetric=true, ishermitian=true) do w
+        # using α like this is basically a JVP by-hand, since
+        # AbstractDifferentiation doesn't have JVP
+        first(AD.jacobian(0, backend=ad_fwd) do α
+            first(AD.gradient(ẑ + α * w, backend=ad_rev) do z
+                logLike(prob, x, z, θ̄, UnTransformedθ())
+            end)
+        end)
+    end
+    H2 = -(dFdθ' * cg(A, dFdθ1))
+
+    H1 + H2
+
+end
+
+
+
 @doc doc"""
 
     get_H!(result::MuseResult, prob::AbstractMuseProblem, [θ₀=nothing]; kwargs...)
