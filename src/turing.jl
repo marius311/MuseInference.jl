@@ -114,9 +114,9 @@ function TuringMuseProblem(
     # set backend based on Turing's by default
     if autodiff == nothing
         if Turing.ADBACKEND[] == :zygote
-            autodiff = ZygoteBackend()
+            autodiff = AD.ZygoteBackend()
         elseif Turing.ADBACKEND[] == :forwarddiff
-            autodiff = ForwardDiffBackend()
+            autodiff = AD.ForwardDiffBackend()
         else
             error("Unsupposed backend from Turing: $(Turing.ADBACKEND)")
         end
