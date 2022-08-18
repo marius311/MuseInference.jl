@@ -102,3 +102,5 @@ function split_rng(rng::AbstractRNG, N)
         Random.seed!(copy(rng), rand(rng, UInt32))
     end
 end
+
+versionof(pkg::Module) = Pkg.dependencies()[Base.PkgId(pkg).uuid].version
