@@ -1,12 +1,14 @@
 
 ### SimpleMuseProblem
 
-struct SimpleMuseProblem{X,S,Gθ,Pθ,GZ} <: AbstractMuseProblem
+struct SimpleMuseProblem{X,S,L,Gθ,Pθ,GZ,A} <: AbstractMuseProblem
     x :: X
     sample_x_z :: S
+    logLike :: L
     ∇θ_logLike :: Gθ
     logLike_and_∇z_logLike :: GZ
     logPriorθ :: Pθ
+    autodiff :: A
 end
 
 @doc doc"""
@@ -78,12 +80,15 @@ function SimpleMuseProblem(x, sample_x_z, logLike, logPriorθ=(θ->0); autodiff:
     SimpleMuseProblem(
         x,
         sample_x_z,
+        logLike,
         (x,z,θ) -> first(AD.gradient(autodiff, θ -> logLike(x,z,θ), θ)),
         (x,z,θ) -> first.(AD.value_and_gradient(autodiff, z -> logLike(x,z,θ), z)),
-        logPriorθ
+        logPriorθ,
+        autodiff
     )
 end
 
+logLike(prob::SimpleMuseProblem, x, z, θ) = prob.logLike(x, z, θ)
 ∇θ_logLike(prob::SimpleMuseProblem, x, z, θ) = prob.∇θ_logLike(x, z, θ)
 logPriorθ(prob::SimpleMuseProblem, θ) = prob.logPriorθ(θ)
 logLike_and_∇z_logLike(prob::SimpleMuseProblem, x, z, θ) = prob.logLike_and_∇z_logLike(x, z, θ)

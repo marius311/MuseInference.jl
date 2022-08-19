@@ -1,19 +1,4 @@
 
-if VERSION < v"1.7"
-    macro something(args...)
-        expr = :(nothing)
-        for arg in reverse(args)
-            expr = :(val = $(esc(arg)); val !== nothing ? val : ($expr))
-        end
-        something = GlobalRef(MuseInference, :something)
-        return :($something($expr))
-        end
-    something() = throw(ArgumentError("No value arguments present"))
-    something(x::Nothing, y...) = something(y...)
-    something(x::Any, y...) = x
-end
-
-
 _map(args...; _...) = map(args...)
 
 # modified version of https://github.com/JuliaDiff/FiniteDifferences.jl/blob/4d30c4389e06dd2295fd880be57bf58ca8dfc1ce/src/grad.jl#L9
@@ -21,10 +6,10 @@ _map(args...; _...) = map(args...)
 # * specifying the step-size
 # * specificying a map function (like pmap instead)
 # * (parallel-friendly) progress bar
-function pjacobian(f, fdm, x, step; pmap=_map, batch_size=1, pbar=nothing)
+function pjacobian(f, pool, fdm, x, step; pbar=nothing)
     
     x, from_vec = to_vec(x)
-    ẏs = pmap(tuple.(eachindex(x),step); batch_size) do (n, step)
+    ẏs = pmap(pool, tuple.(eachindex(x),step)) do (n, step)
         j = fdm(zero(eltype(x)), (step==nothing ? () : step)...) do ε
             xn = x[n]
             x[n] = xn + ε
@@ -68,3 +53,39 @@ function _namedtuple(cv::ComponentVector)
 end
 
 LinearAlgebra.inv(A::ComponentMatrix{<:Real, <:Symmetric}) = ComponentArray(Matrix(inv(getdata(A))), getaxes(A))
+
+# NamedTupleTools's is broken for Zygote
+function select(nt::NamedTuple, ks)
+    vals = map(k -> nt[k], ks)
+    NamedTuple{ks}(vals)
+end
+
+# see https://github.com/JuliaDiff/ForwardDiff.jl/issues/593
+function Random.randn!(rng::AbstractRNG, A::Array{<:ForwardDiff.Dual})
+    A .= randn!(rng, ForwardDiff.value.(A))
+end
+
+# type-piracy bc these make code much clearer to read. could be removed if
+# https://github.com/JuliaDiff/AbstractDifferentiation.jl/pull/62 is merged
+AD.gradient(f, args...; backend::AD.AbstractBackend) = AD.gradient(backend, f, args...)
+AD.jacobian(f, args...; backend::AD.AbstractBackend) = AD.jacobian(backend, f, args...)
+
+# worker pool which just falls back to map
+struct LocalWorkerPool <: AbstractWorkerPool end
+Distributed.pmap(f, ::LocalWorkerPool, args...) = map(f, args...)
+
+# worker pool which is equivalent to passing batch_size to pmap
+struct BatchWorkerPool <: AbstractWorkerPool
+    pool
+    batch_size
+end
+Distributed.pmap(f, bpool::BatchWorkerPool, args...) = pmap(f, bpool.pool, args...; bpool.batch_size)
+
+# split one rng into a bunch in a way that works with generic RNGs
+function split_rng(rng::AbstractRNG, N)
+    map(1:N) do i
+        Random.seed!(copy(rng), rand(rng, UInt32))
+    end
+end
+
+versionof(pkg::Module) = Pkg.dependencies()[Base.PkgId(pkg).uuid].version

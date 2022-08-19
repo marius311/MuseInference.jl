@@ -29,10 +29,11 @@ pkg> add https://github.com/marius311/MuseInference.jl
 
 The easiest way to use MuseInference is with problems defined via the Probabilistic Programming Language, [Turing.jl](https://turing.ml/stable/).
 
-First, load up the relevant packages:
+First, load up the packages we'll need:
 
 ```@example 1
-using MuseInference, Random, Turing, Zygote, PyPlot, Printf, Dates, LinearAlgebra
+using MuseInference, Turing
+using AbstractDifferentiation, Dates, LinearAlgebra, Printf, PyPlot, Random, Zygote
 Turing.setadbackend(:zygote)
 PyPlot.ioff() # hide
 using Logging # hide
@@ -179,7 +180,7 @@ prob = SimpleMuseProblem(
     function logPrior(θ)
         -θ^2/(2*3^2)
     end;
-    autodiff = MuseInference.ZygoteBackend()
+    autodiff = AD.ZygoteBackend()
 )
 nothing # hide
 ```

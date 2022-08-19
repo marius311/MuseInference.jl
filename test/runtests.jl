@@ -1,6 +1,7 @@
 
 using MuseInference, Soss, Turing, Distributions, Random, 
-    Zygote, MeasureTheory, Test, StableRNGs, LinearAlgebra
+    Zygote, MeasureTheory, Test, StableRNGs, LinearAlgebra, 
+    AbstractDifferentiation
 
 ##
 
@@ -17,8 +18,8 @@ rng = StableRNG(0)
         end
 
         @testset "$name" for (name,autodiff) in [
-            ("ForwardDiff", MuseInference.ForwardDiffBackend()), 
-            ("Zygote", MuseInference.ZygoteBackend())
+            ("ForwardDiff", AD.ForwardDiffBackend()), 
+            ("Zygote", AD.ZygoteBackend())
         ]
 
             (;x) = rand(copy(rng), turing_funnel() | (θ=0,))
@@ -31,8 +32,6 @@ rng = StableRNG(0)
 
     end
 
-    ##
-
     @testset "Soss w/ Distributions" begin 
 
         soss_funnel = Soss.@model (σ) begin
@@ -42,8 +41,8 @@ rng = StableRNG(0)
         end
 
         @testset "$name" for (name,autodiff) in [
-            ("ForwardDiff", MuseInference.ForwardDiffBackend()), 
-            ("Zygote", MuseInference.ZygoteBackend())
+            ("ForwardDiff", AD.ForwardDiffBackend()), 
+            ("Zygote", AD.ZygoteBackend())
         ]
 
             (;x) = Soss.predict(copy(rng), soss_funnel(3), θ=0)
@@ -67,8 +66,8 @@ rng = StableRNG(0)
         end
 
         @testset "$name" for (name,autodiff) in [
-            ("ForwardDiff", MuseInference.ForwardDiffBackend()), 
-            # ("Zygote", MuseInference.ZygoteBackend()) # broken
+            ("ForwardDiff", AD.ForwardDiffBackend()), 
+            # ("Zygote", AD.ZygoteBackend()) # broken
         ]
 
             (;x) = Soss.predict(copy(rng), soss_funnel(3), θ=0)
@@ -85,6 +84,6 @@ end
 
 ##
 
-if get(ENV, "BUILD_DOCS", false) != false
+if parse(Bool, get(ENV, "BUILD_DOCS", "false"))
     include(joinpath(@__DIR__, "../docs/make.jl"))
 end

@@ -1,4 +1,5 @@
 [deps]
+AbstractDifferentiation = "c29ec348-61ec-40c8-8164-b8c60e9d9f3d"
 ComponentArrays = "b0b7db55-cfe3-40fc-9ded-d10e2dbeff66"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
@@ -20,3 +21,7 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 TransformVariables = "84d833dd-6860-57f9-a1a7-6da5db126cff"
 Turing = "fce5fe82-541a-59a6-adf8-730c64b5f9a0"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
+
+[compat]
+Soss = "0.21.2"
+Turing = "0.21.10"
