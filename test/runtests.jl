@@ -84,6 +84,6 @@ end
 
 ##
 
-if get(ENV, "BUILD_DOCS", false) != false
+if parse(Bool, get(ENV, "BUILD_DOCS", "false"))
     include(joinpath(@__DIR__, "../docs/make.jl"))
 end
