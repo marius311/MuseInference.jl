@@ -306,6 +306,12 @@ function get_H!(
 
     if implicit_diff
 
+        # check we can do implicit diff on this problem
+        (x, z) = sample_x_z(prob, copy(rng), θ₀)
+        if !(eltype(x) <:AbstractFloat && eltype(z) <:AbstractFloat)
+            error("implicit_diff=true requires elements of `x` and `z` to be `AbstractFloat`s (ie they must be continuous numbers).")
+        end
+
         pbar = progress ? RemoteProgress(nsims_remaining, 0.1, "get_H: ") : nothing
 
         append!(result.Hs, skipmissing(pmap(pool, rngs) do rng
@@ -318,11 +324,11 @@ function get_H!(
                 ad_fwd, ad_rev = AD.second_lowest(prob.autodiff), AD.lowest(prob.autodiff)
             
                 # non-implicit-diff term
-                H1 = first(AD.jacobian(θ₀, backend=ad_fwd) do θ′
-                    first(AD.gradient(θ₀, backend=ad_fwd) do θ
+                H1 = first(AD.jacobian(θ₀, backend=ad_fwd) do θ
+                    first(AD.gradient(θ₀, backend=ad_fwd) do θ′ 
                         logLike(prob, sample_x_z(prob, copy(rng), θ).x, ẑ, θ′, UnTransformedθ())
                     end)
-                end)
+                end)'
             
                 # term involving dzMAP/dθ via implicit-diff (w/ conjugate-gradient linear solve)
                 dFdθ = first(AD.jacobian(θ₀, backend=ad_fwd) do θ
@@ -343,7 +349,7 @@ function get_H!(
                         end)
                     end)
                 end
-                H2 = -(dFdθ' * cg(A, dFdθ1))
+                H2 = -(dFdθ' * mapreduce(w -> cg(A, w), hcat, eachcol(dFdθ1)))
 
                 H = H1 + H2
                 progress && ProgressMeter.next!(pbar)
