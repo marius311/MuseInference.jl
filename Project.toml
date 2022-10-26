@@ -1,7 +1,7 @@
 name = "MuseInference"
 uuid = "43b88160-90c7-4f71-933b-9d65205cd921"
 authors = ["Marius Millea <mariusmillea@gmail.com>"]
-version = "0.2.0"
+version = "0.2.1"
 
 [deps]
 AbstractDifferentiation = "c29ec348-61ec-40c8-8164-b8c60e9d9f3d"

@@ -36,7 +36,7 @@ include("interface.jl")
 include("muse.jl")
 include("simple.jl")
 @init @require Turing="fce5fe82-541a-59a6-adf8-730c64b5f9a0" begin
-    TURING_COMPAT = Pkg.Versions.VersionSpec(TOML.parsefile(joinpath(@__DIR__,"..","test","Project.toml"))["compat"]["Turing"])
+    TURING_COMPAT = Pkg.Versions.semver_spec(TOML.parsefile(joinpath(@__DIR__,"..","test","Project.toml"))["compat"]["Turing"])
     TURING_VERSION = versionof(Turing)
     if TURING_VERSION in TURING_COMPAT
         include("turing.jl")
@@ -46,7 +46,7 @@ include("simple.jl")
     end
 end
 @init @require Soss="8ce77f84-9b61-11e8-39ff-d17a774bf41c" begin
-    SOSS_COMPAT = Pkg.Versions.VersionSpec(TOML.parsefile(joinpath(@__DIR__,"..","test","Project.toml"))["compat"]["Soss"])
+    SOSS_COMPAT = Pkg.Versions.semver_spec(TOML.parsefile(joinpath(@__DIR__,"..","test","Project.toml"))["compat"]["Soss"])
     SOSS_VERSION = versionof(Soss)
     if SOSS_VERSION in SOSS_COMPAT
         include("soss.jl")
