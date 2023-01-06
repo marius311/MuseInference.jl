@@ -129,7 +129,7 @@ function muse!(
     history = result.history
     
     _rng = copy(rng)
-    xs_ẑs_sims = map(1:nsims) do i
+    xs_ẑs_sims = pmap(pool, 1:nsims) do i
         (x, z) = sample_x_z(prob, _rng, θ)
         (x, @something(z₀, z))
     end
@@ -147,7 +147,9 @@ function muse!(
 
             if i > 1
                 _rng = copy(rng)
-                xs = [[prob.x]; [sample_x_z(prob, _rng, θ).x for i=1:nsims]]
+                xs = [[prob.x]; pmap(pool, 1:nsims) do
+                    sample_x_z(prob, _rng, θ).x
+                end]
             end
 
             if i > 2
