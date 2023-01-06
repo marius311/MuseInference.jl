@@ -89,3 +89,7 @@ function split_rng(rng::AbstractRNG, N)
 end
 
 versionof(pkg::Module) = Pkg.dependencies()[Base.PkgId(pkg).uuid].version
+
+# allow using InverseMap as an IterativeSolvers preconditioner
+LinearAlgebra.ldiv!(dst::AbstractVector, A::InverseMap, src::AbstractVector) = mul!(dst, A.A, src)
+LinearAlgebra.ldiv!(A::InverseMap, vec::AbstractVector) = copyto!(vec, mul!(A.A, vec))

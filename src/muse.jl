@@ -36,6 +36,7 @@ Base.@kwdef mutable struct MuseResult
     history = []
     gs = []
     Hs = []
+    metadata = Dict()
     rng = nothing
     time = Millisecond(0)
 end
@@ -291,7 +292,8 @@ function get_H!(
     progress = false,
     skip_errors = false,
     z₀ = nothing,
-    implicit_diff = false
+    implicit_diff = false,
+    implicit_diff_cg_kwargs = (maxiter=100, Pl=I),
 )
 
     θ₀ = standardizeθ(prob, @something(θ₀, result.θ))
@@ -304,17 +306,27 @@ function get_H!(
 
     rngs = split_rng(rng, nsims_remaining)
 
+    pbar = progress ? RemoteProgress(nsims_remaining*(1+length(θ₀)), 0.1, "get_H: ") : nothing
+
+    # determine if we parallelize over simulations or over columns of
+    # the finite-difference jacobian
+    if (pmap_over == :jac || ((pmap_over == :auto) && (length(θ₀) > nsims_remaining)))
+        pool_sims, pool_jac = (LocalWorkerPool(), pool)
+    else
+        pool_sims, pool_jac = (pool, LocalWorkerPool())
+    end
+
     if implicit_diff
 
         # check we can do implicit diff on this problem
         (x, z) = sample_x_z(prob, copy(rng), θ₀)
-        if !(eltype(x) <:AbstractFloat && eltype(z) <:AbstractFloat)
+        if !(real(eltype(x)) <: AbstractFloat && real(eltype(z)) <: AbstractFloat)
             error("implicit_diff=true requires elements of `x` and `z` to be `AbstractFloat`s (ie they must be continuous numbers).")
         end
 
         pbar = progress ? RemoteProgress(nsims_remaining, 0.1, "get_H: ") : nothing
 
-        append!(result.Hs, skipmissing(pmap(pool, rngs) do rng
+        Hs = skipmissing(pmap(pool_sims, rngs) do rng
 
             try
 
@@ -323,37 +335,41 @@ function get_H!(
             
                 ad_fwd, ad_rev = AD.second_lowest(prob.autodiff), AD.lowest(prob.autodiff)
             
-                # non-implicit-diff term
-                H1 = first(AD.jacobian(θ₀, backend=ad_fwd) do θ
-                    first(AD.gradient(θ₀, backend=ad_fwd) do θ′ 
-                        logLike(prob, sample_x_z(prob, copy(rng), θ).x, ẑ, θ′, UnTransformedθ())
+                ## non-implicit-diff term
+                H1 = permutedims(first(AD.jacobian(θ₀, backend=ad_fwd) do θ
+                    local x, = sample_x_z(prob, copy(rng), θ)
+                    first(AD.gradient(θ₀, backend=ad_rev) do θ′ 
+                        logLike(prob, x, ẑ, θ′, UnTransformedθ())
                     end)
-                end)'
+                end))
             
-                # term involving dzMAP/dθ via implicit-diff (w/ conjugate-gradient linear solve)
+                ## term involving dzMAP/dθ via implicit-diff (w/ conjugate-gradient linear solve)
                 dFdθ = first(AD.jacobian(θ₀, backend=ad_fwd) do θ
                     first(AD.gradient(ẑ, backend=ad_rev) do z
                         logLike(prob, x, z, θ, UnTransformedθ())
                     end)
                 end)
                 dFdθ1 = first(AD.jacobian(θ₀, backend=ad_fwd) do θ
+                    local x, = sample_x_z(prob, copy(rng), θ)
                     first(AD.gradient(ẑ, backend=ad_rev) do z
-                        logLike(prob, sample_x_z(prob, copy(rng), θ).x, z, θ₀, UnTransformedθ())
+                        logLike(prob, x, z, θ₀, UnTransformedθ())
                     end)
                 end)
+                # A is the operation of the Hessian of logLike w.r.t. z
                 A = LinearMap(length(z), isposdef=true, issymmetric=true, ishermitian=true) do w
-                    # this is effectively a by-hand JVP
                     first(AD.jacobian(0, backend=ad_fwd) do α
                         first(AD.gradient(ẑ + α * w, backend=ad_rev) do z
                             logLike(prob, x, z, θ₀, UnTransformedθ())
                         end)
                     end)
                 end
-                H2 = -(dFdθ' * mapreduce(w -> cg(A, w), hcat, eachcol(dFdθ1)))
+                A⁻¹_dFdθ1 = pmap(w -> cg(A, w; implicit_diff_cg_kwargs..., log=true), pool_jac, eachcol(dFdθ1))
+                cg_hists = map(last, A⁻¹_dFdθ1)
+                H2 = -(dFdθ' * mapreduce(first, hcat, A⁻¹_dFdθ1))
 
-                H = H1 + H2
+                H = H1 + copyto!(similar(H1), H2)
                 progress && ProgressMeter.next!(pbar)
-                return H
+                return H, cg_hists
         
             catch err
                 if skip_errors && !(err isa InterruptException)
@@ -364,24 +380,17 @@ function get_H!(
                 end
             end
 
-        end))
+        end)
+
+        append!(result.Hs, map(first, Hs))
+        append!(get!(() -> [], result.metadata, :implicit_diff_cg_hists), map(last, Hs))
 
     else
-
-        pbar = progress ? RemoteProgress(nsims_remaining*(1+length(θ₀)), 0.1, "get_H: ") : nothing
 
         # default to finite difference step size of 0.1σ with σ roughly
         # estimated from g sims, if we have them
         if step == nothing && !isempty(result.gs)
             step = 0.1 ./ std(result.gs)
-        end
-
-        # determine if we parallelize over simulations or over columns of
-        # the finite-difference jacobian
-        if (pmap_over == :jac || ((pmap_over == :auto) && (length(θ₀) > nsims_remaining)))
-            pool_sims, pool_jac = (LocalWorkerPool(), pool)
-        else
-            pool_sims, pool_jac = (pool, LocalWorkerPool())
         end
 
         # generate simulations and do initial fit at fiducial, used as
@@ -415,7 +424,7 @@ function get_H!(
 
     end
  
-    result.H = (θ₀ isa Number) ? mean(first.(result.Hs)) : (mean(result.Hs) .+ 𝟘)
+    result.H = (θ₀ isa Number) ? mean(first, result.Hs) : (mean(result.Hs) .+ 𝟘)
     result.time += now() - t₀
     finalize_result!(result, prob)
 
