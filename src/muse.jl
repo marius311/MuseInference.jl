@@ -129,13 +129,12 @@ function muse!(
     θunreg′ = θ′ = transform_θ(prob, θ)
     history = result.history
     
-    _rng = copy(rng)
-    xs_ẑs_sims = pmap(pool, 1:nsims) do i
-        (x, z) = sample_x_z(prob, _rng, θ)
+    xs_ẑs_sims = pmap(pool, split_rng(rng, nsims)) do rng
+        (x, z) = sample_x_z(prob, rng, θ)
         (x, @something(z₀, z))
     end
-    xs = [[prob.x];                                      first.(xs_ẑs_sims)]
-    ẑs = [[@something(z₀, sample_x_z(prob, _rng, θ).z)]; last.(xs_ẑs_sims)]
+    xs = [[prob.x];                                           first.(xs_ẑs_sims)]
+    ẑs = [[@something(z₀, sample_x_z(prob, copy(rng), θ).z)]; last.(xs_ẑs_sims)]
 
     # set up progress bar
     pbar = progress ? RemoteProgress((maxsteps-length(result.history))*(nsims+1), 0.1, "MUSE: ") : nothing
@@ -147,9 +146,8 @@ function muse!(
             t₀ = now()
 
             if i > 1
-                _rng = copy(rng)
-                xs = [[prob.x]; pmap(pool, 1:nsims) do
-                    sample_x_z(prob, _rng, θ).x
+                xs = [[prob.x]; pmap(pool, split_rng(rng, nsims)) do rng
+                    sample_x_z(prob, rng, θ).x
                 end]
             end
 
