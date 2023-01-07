@@ -320,12 +320,6 @@ function get_H!(
 
     if implicit_diff
 
-        # check we can do implicit diff on this problem
-        (x, z) = sample_x_z(prob, copy(rng), θ₀)
-        if !(real(eltype(x)) <: AbstractFloat && real(eltype(z)) <: AbstractFloat)
-            error("implicit_diff=true requires elements of `x` and `z` to be `AbstractFloat`s (ie they must be continuous numbers).")
-        end
-
         pbar = progress ? RemoteProgress(nsims_remaining, 0.1, "get_H: ") : nothing
 
         Hs = skipmissing(pmap(pool_sims, rngs) do rng
@@ -334,6 +328,7 @@ function get_H!(
 
                 (x, z) = sample_x_z(prob, copy(rng), θ₀)
                 ẑ, = ẑ_at_θ(prob, x, 0z, θ₀, ∇z_logLike_atol=1e-1)
+                T = eltype(z)
             
                 ad_fwd, ad_rev = AD.second_lowest(prob.autodiff), AD.lowest(prob.autodiff)
             
@@ -358,7 +353,7 @@ function get_H!(
                     end)
                 end)
                 # A is the operation of the Hessian of logLike w.r.t. z
-                A = LinearMap(length(z), isposdef=true, issymmetric=true, ishermitian=true) do w
+                A = LinearMap{T}(length(z), isposdef=true, issymmetric=true, ishermitian=true) do w
                     first(AD.jacobian(0, backend=ad_fwd) do α
                         first(AD.gradient(ẑ + α * w, backend=ad_rev) do z
                             logLike(prob, x, z, θ₀, UnTransformedθ())
@@ -376,7 +371,7 @@ function get_H!(
             catch err
                 if skip_errors && !(err isa InterruptException)
                     @warn err
-                    return missing
+                    return (missing,)
                 else
                     rethrow(err)
                 end
