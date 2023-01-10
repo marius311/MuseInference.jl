@@ -133,8 +133,8 @@ function muse!(
         (x, z) = sample_x_z(prob, rng, θ)
         (x, @something(z₀, z))
     end
-    xs = [[prob.x];                          first.(xs_ẑs_sims)]
-    ẑs = [[@something(z₀, zero(first(ẑs)))]; last.(xs_ẑs_sims)]
+    xs = [[prob.x];                                 first.(xs_ẑs_sims)]
+    ẑs = [[@something(z₀, zero(xs_ẑs_sims[1][2]))]; last.(xs_ẑs_sims)]
     T = eltype(first(ẑs))
 
     # set up progress bar
