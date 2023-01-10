@@ -133,8 +133,9 @@ function muse!(
         (x, z) = sample_x_z(prob, rng, θ)
         (x, @something(z₀, z))
     end
-    xs = [[prob.x];                                           first.(xs_ẑs_sims)]
-    ẑs = [[@something(z₀, sample_x_z(prob, copy(rng), θ).z)]; last.(xs_ẑs_sims)]
+    xs = [[prob.x];                          first.(xs_ẑs_sims)]
+    ẑs = [[@something(z₀, zero(first(ẑs)))]; last.(xs_ẑs_sims)]
+    T = eltype(first(ẑs))
 
     # set up progress bar
     pbar = progress ? RemoteProgress((maxsteps-length(result.history))*(nsims+1), 0.1, "MUSE: ") : nothing
@@ -208,7 +209,7 @@ function muse!(
             )
 
             # Newton-Rhapson step
-            θunreg′ = θ′ .- α .* (H⁻¹_post′ * g_post′)
+            θunreg′ = θ′ .- T(α) .* (H⁻¹_post′ * g_post′)
             θunreg  = inv_transform_θ(prob, θunreg′)
             θ′ = regularize(θunreg′)
             θ  = inv_transform_θ(prob, θ′)
@@ -318,14 +319,13 @@ function get_H!(
 
     if implicit_diff
 
-        pbar = progress ? RemoteProgress(nsims_remaining, 0.1, "get_H: ") : nothing
-
         Hs = skipmissing(pmap(pool_sims, rngs) do rng
 
             try
 
                 (x, z) = sample_x_z(prob, copy(rng), θ₀)
                 ẑ, = ẑ_at_θ(prob, x, 0z, θ₀, ∇z_logLike_atol=1e-1)
+                pbar == nothing || ProgressMeter.next!(pbar)
                 T = eltype(z)
             
                 ad_fwd, ad_rev = AD.second_lowest(prob.autodiff), AD.lowest(prob.autodiff)
@@ -358,7 +358,12 @@ function get_H!(
                         end)
                     end)
                 end
-                A⁻¹_dFdθ1 = pmap(w -> cg(A, w; implicit_diff_cg_kwargs..., log=true), pool_jac, eachcol(dFdθ1))
+                A⁻¹_dFdθ1 = pmap(pool_jac, eachcol(dFdθ1)) do w 
+                    A⁻¹_w = cg(A, w; implicit_diff_cg_kwargs..., log=true)
+                    pbar == nothing || ProgressMeter.next!(pbar)
+                    A⁻¹_w
+                end
+
                 cg_hists = map(last, A⁻¹_dFdθ1)
                 H2 = -(dFdθ' * mapreduce(first, hcat, A⁻¹_dFdθ1))
 
