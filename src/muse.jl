@@ -96,6 +96,12 @@ Keyword arguments:
   iteration. 
 * `get_covariance = false` — Also call `get_H` and `get_J` to get the
   full covariance.
+* `save_MAPs = false` — Whether to store the MAP solution at each step
+  and for each sim and data into the history (for debugging). Defaults
+  to `false` since these are generally high-dimensional and may
+  consume lots of memory. Can also pass a function which preprocess
+  the MAP before storing it (e.g. `save_MAPs = x -> adapt(Array, x)` to
+  convert from a GPU to a CPU array).
 
 """
 muse(args...; kwargs...) = muse!(MuseResult(), args...; kwargs...)
@@ -121,13 +127,20 @@ function muse!(
     H⁻¹_update = :sims,
     broyden_memory = Inf,
     checkpoint_filename = nothing,
-    get_covariance = false
+    get_covariance = false,
+    save_MAPs = false,
 )
 
     result.rng = rng = @something(rng, result.rng, copy(Random.default_rng()))
     θunreg  = θ  = θ₀ = standardizeθ(prob, @something(result.θ, θ₀))
     θunreg′ = θ′ = transform_θ(prob, θ)
     history = result.history
+    
+    if save_MAPs == true
+        save_MAPs = identity
+    elseif save_MAPs == false
+        save_MAPs = x -> nothing
+    end
     
     xs_ẑs_sims = pmap(pool, split_rng(rng, nsims)) do rng
         (x, z) = sample_x_z(prob, rng, θ)
@@ -165,10 +178,12 @@ function muse!(
                 progress && ProgressMeter.next!(pbar)
                 (;g, g′, ẑ, history)
             end
-            ẑs = getindex.(gẑs, :ẑ)
+            g_like_dat,    g_like_sims    = peel(getindex.(gẑs, :g))
+            g_like_dat′,   g_like_sims′   = peel(getindex.(gẑs, :g′))
             ẑ_history_dat, ẑ_history_sims = peel(getindex.(gẑs, :history))
-            g_like_dat′, g_like_sims′ = peel(getindex.(gẑs, :g′))
-            _,           g_like_sims  = peel(getindex.(gẑs, :g))
+            ẑ_dat,         ẑ_sims         = peel(getindex.(gẑs, :ẑ))
+            ẑs = getindex.(gẑs, :ẑ)
+
             g_like′ = g_like_dat′ .- mean(g_like_sims′)
             g_prior′ = AD.gradient(AD.ForwardDiffBackend(), θ′ -> logPriorθ(prob, θ′, Transformedθ()), θ′)[1]
             g_post′ = g_like′ .+ g_prior′
@@ -204,7 +219,8 @@ function muse!(
                     g_like_sims,
                     g_like_dat′, g_like_sims′, g_like′, g_prior′, g_post′, 
                     H⁻¹_post′, H_prior′, H⁻¹_like′, H⁻¹_like_sims′, 
-                    ẑ_history_dat, ẑ_history_sims, t
+                    ẑ_history_dat, ẑ_history_sims, t,
+                    ẑ_dat = save_MAPs(ẑ_dat), ẑ_sims = save_MAPs(ẑ_sims)
                 )
             )
 
