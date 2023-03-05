@@ -220,7 +220,7 @@ function muse!(
                     g_like_dat′, g_like_sims′, g_like′, g_prior′, g_post′, 
                     H⁻¹_post′, H_prior′, H⁻¹_like′, H⁻¹_like_sims′, 
                     ẑ_history_dat, ẑ_history_sims, t,
-                    ẑ_dat = save_MAPs(ẑ_dat), ẑ_sims = save_MAPs(ẑ_sims)
+                    ẑ_dat = save_MAPs(ẑ_dat), ẑ_sims = save_MAPs.(ẑ_sims)
                 )
             )
 
