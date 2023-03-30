@@ -310,6 +310,7 @@ function get_H!(
     skip_errors = false,
     z₀ = nothing,
     implicit_diff = false,
+    implicit_diff_H1_is_zero = false,
     implicit_diff_cg_kwargs = (maxiter=100, Pl=I),
 )
 
@@ -340,19 +341,20 @@ function get_H!(
             try
 
                 (x, z) = sample_x_z(prob, copy(rng), θ₀)
-                ẑ, = ẑ_at_θ(prob, x, 0z, θ₀, ∇z_logLike_atol=1e-1)
+                z_start = @something(z₀, ẑ_guess_from_truth(prob, x, z, θ₀))
+                ẑ, = ẑ_at_θ(prob, x, z_start, θ₀, ∇z_logLike_atol=1e-1)
                 pbar == nothing || ProgressMeter.next!(pbar)
-                T = eltype(z)
+                T = eltype(z_start)
             
                 ad_fwd, ad_rev = AD.second_lowest(prob.autodiff), AD.lowest(prob.autodiff)
             
                 ## non-implicit-diff term
-                H1 = permutedims(first(AD.jacobian(θ₀, backend=ad_fwd) do θ
+                H1 = implicit_diff_H1_is_zero ? 𝟘 : copyto!(similar(𝟘), permutedims(first(AD.jacobian(θ₀, backend=ad_fwd) do θ
                     local x, = sample_x_z(prob, copy(rng), θ)
                     first(AD.gradient(θ₀, backend=ad_rev) do θ′ 
                         logLike(prob, x, ẑ, θ′, UnTransformedθ())
                     end)
-                end))
+                end)))
             
                 ## term involving dzMAP/dθ via implicit-diff (w/ conjugate-gradient linear solve)
                 dFdθ = first(AD.jacobian(θ₀, backend=ad_fwd) do θ
@@ -367,7 +369,7 @@ function get_H!(
                     end)
                 end)
                 # A is the operation of the Hessian of logLike w.r.t. z
-                A = LinearMap{T}(length(z), isposdef=true, issymmetric=true, ishermitian=true) do w
+                A = LinearMap{T}(length(z_start), isposdef=true, issymmetric=true, ishermitian=true) do w
                     first(AD.jacobian(0, backend=ad_fwd) do α
                         first(AD.gradient(ẑ + α * w, backend=ad_rev) do z
                             logLike(prob, x, z, θ₀, UnTransformedθ())
@@ -381,9 +383,9 @@ function get_H!(
                 end
 
                 cg_hists = map(last, A⁻¹_dFdθ1)
-                H2 = -(dFdθ' * mapreduce(first, hcat, A⁻¹_dFdθ1))
+                H2 = copyto!(similar(𝟘), -(dFdθ' * mapreduce(first, hcat, A⁻¹_dFdθ1)))
 
-                H = H1 + copyto!(similar(H1), H2)
+                H = H1 + H2
                 progress && ProgressMeter.next!(pbar)
                 return H, cg_hists
         
@@ -413,8 +415,8 @@ function get_H!(
         # starting points for finite difference below
         ẑfids = pmap(pool, rngs) do rngs
             (x, z) = sample_x_z(prob, copy(rng), θ₀)
-            ẑ₀ = @something(z₀, z)
-            ẑ, = ẑ_at_θ(prob, x, ẑ₀, θ₀; ∇z_logLike_atol)
+            z_start = @something(z₀, ẑ_guess_from_truth(prob, x, z, θ₀))
+            ẑ, = ẑ_at_θ(prob, x, z_start, θ₀; ∇z_logLike_atol)
             progress && ProgressMeter.next!(pbar)
             ẑ
         end

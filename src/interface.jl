@@ -173,6 +173,20 @@ end
 
 
 @doc doc"""
+    ẑ_guess_from_truth(prob::AbstractMuseProblem, x, z, θ)
+
+Return a guess for the best-fit latent space given data, `x`,
+parameters, `θ`, and the true value of latent space in the simulation,
+`z`. Used as a starting point for [`ẑ_at_θ`](@ref) when that function
+is called on simulations. Typical choices may include `zero(z)` (the
+default), `z` itself, or some other heurestic guess.
+"""
+function ẑ_guess_from_truth(prob::AbstractMuseProblem, x, z, θ)
+    zero(z)
+end
+
+
+@doc doc"""
     check_self_consistency(
         prob, 
         θ;
