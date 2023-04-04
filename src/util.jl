@@ -82,9 +82,11 @@ end
 Distributed.pmap(f, bpool::BatchWorkerPool, args...) = pmap(f, bpool.pool, args...; bpool.batch_size)
 
 # split one rng into a bunch in a way that works with generic RNGs
+# does not advance the rng
 function split_rng(rng::AbstractRNG, N)
+    rng_for_split = copy(rng)
     map(1:N) do i
-        Random.seed!(copy(rng), rand(rng, UInt32))
+        Random.seed!(copy(rng), rand(rng_for_split, UInt32))
     end
 end
 
