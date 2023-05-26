@@ -1,7 +1,7 @@
 
 using MuseInference, Soss, Turing, Distributions, Random, 
-    Zygote, MeasureTheory, Test, StableRNGs, LinearAlgebra, 
-    AbstractDifferentiation
+    Zygote, MeasureTheory, Test, StableRNGs, LinearAlgebra
+import AbstractDifferentiation as AD
 
 ##
 
