@@ -73,6 +73,7 @@ AD.jacobian(f, args...; backend::AD.AbstractBackend) = AD.jacobian(backend, f, a
 # worker pool which just falls back to map
 struct LocalWorkerPool <: AbstractWorkerPool end
 Distributed.pmap(f, ::LocalWorkerPool, args...) = map(f, args...)
+Distributed.remotecall_fetch(f, ::LocalWorkerPool, args...) = f(args...)
 
 # worker pool which is equivalent to passing batch_size to pmap
 struct BatchWorkerPool <: AbstractWorkerPool

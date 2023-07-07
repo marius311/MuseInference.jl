@@ -340,10 +340,13 @@ function get_H!(
 
             try
 
-                (x, z) = sample_x_z(prob, copy(rng), θ₀)
-                z_start = @something(z₀, ẑ_guess_from_truth(prob, x, z, θ₀))
-                ẑ, = ẑ_at_θ(prob, x, z_start, θ₀, ∇z_logLike_atol=1e-1)
-                pbar == nothing || ProgressMeter.next!(pbar)
+                (x, z, z_start, ẑ) = remotecall_fetch(pool_jac) do
+                    (x, z) = sample_x_z(prob, copy(rng), θ₀)
+                    z_start = @something(z₀, ẑ_guess_from_truth(prob, x, z, θ₀))
+                    ẑ, = ẑ_at_θ(prob, x, z_start, θ₀, ∇z_logLike_atol=1e-1)
+                    pbar == nothing || ProgressMeter.next!(pbar)
+                    (x, z, z_start, ẑ)
+                end
                 T = eltype(z_start)
             
                 ad_fwd, ad_rev = AD.second_lowest(prob.autodiff), AD.lowest(prob.autodiff)
