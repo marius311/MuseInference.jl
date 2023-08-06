@@ -18,8 +18,8 @@ jobs:
           - '1.9'
         os:
           - ubuntu-latest
-          - macOS-lates
-          - windows-lates
+          - macOS-latest
+          - windows-latest
         arch:
           - x64
         include:
