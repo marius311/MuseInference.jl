@@ -24,4 +24,4 @@ Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [compat]
 Soss = "0.21.2"
-Turing = "^0.28"
+Turing = "0.21.10"
