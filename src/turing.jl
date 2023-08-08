@@ -16,6 +16,10 @@ function DynPPL.istrans(vi::DynPPL.SimpleVarInfo{NT,T,<:PartialTransformation}, 
     vn in vi.transformation.transformed_vns
 end
 
+function DynPPL.maybe_invlink_before_eval!!(vi::DynPPL.SimpleVarInfo{NT,T,<:PartialTransformation}, context::DynPPL.AbstractContext, model::DynPPL.Model) where {NT,T}
+    vi
+end
+
 
 struct TuringMuseProblem{A<:AD.AbstractBackend, M<:Turing.Model} <: AbstractMuseProblem
     
@@ -163,7 +167,7 @@ end
 function transform_θ(prob::TuringMuseProblem, θ)
     vi = deepcopy(prob.vi_θ)
     DynPPL.setval!(vi, (;θ...))
-    DynPPL.link!(vi, DynPPL.SampleFromPrior())
+    DynPPL.link!!(vi, DynPPL.SampleFromPrior(), prob.model)
     ComponentVector(vi)
 end
 
@@ -173,7 +177,7 @@ function inv_transform_θ(prob::TuringMuseProblem, θ)
     for k in keys(θ)
         DynPPL.settrans!!(vi, true, _VarName(k))
     end
-    DynPPL.invlink!(vi, DynPPL.SampleFromPrior())
+    DynPPL.invlink!!(vi, DynPPL.SampleFromPrior(), prob.model)
     ComponentVector(vi)
 end
 
