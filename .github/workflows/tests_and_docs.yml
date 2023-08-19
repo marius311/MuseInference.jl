@@ -44,6 +44,9 @@ jobs:
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
+      - name: Set JULIA_NUM_THREADS for Julia 1.9 on Ubuntu
+        if: matrix.version == '1.9' && matrix.os == 'ubuntu-latest'
+        run: echo "JULIA_NUM_THREADS=2" >> $GITHUB_ENV
       - uses: actions/setup-python@v2
         with:
           python-version: '3.8'
