@@ -1,7 +1,7 @@
 module MuseInference
 
 import AbstractDifferentiation as AD
-using Base.Iterators: peel, repeated
+using Base.Iterators: repeated
 using ComponentArrays
 using CovarianceEstimation
 using Dates

@@ -178,10 +178,10 @@ function muse!(
                 progress && ProgressMeter.next!(pbar)
                 (;g, g′, ẑ, history)
             end
-            g_like_dat,    g_like_sims    = peel(getindex.(gẑs, :g))
-            g_like_dat′,   g_like_sims′   = peel(getindex.(gẑs, :g′))
-            ẑ_history_dat, ẑ_history_sims = peel(getindex.(gẑs, :history))
-            ẑ_dat,         ẑ_sims         = peel(getindex.(gẑs, :ẑ))
+            (g_like_dat,    g_like_sims...)    = getindex.(gẑs, :g)
+            (g_like_dat′,   g_like_sims′...)   = getindex.(gẑs, :g′)
+            (ẑ_history_dat, ẑ_history_sims...) = getindex.(gẑs, :history)
+            (ẑ_dat,         ẑ_sims...)         = getindex.(gẑs, :ẑ)
             ẑs = getindex.(gẑs, :ẑ)
 
             g_like′ = g_like_dat′ .- mean(g_like_sims′)
@@ -189,7 +189,7 @@ function muse!(
             g_post′ = g_like′ .+ g_prior′
 
             # Jacobian
-            h⁻¹_like_sims′ = -1 ./ var(collect(g_like_sims′))
+            h⁻¹_like_sims′ = -1 ./ var(g_like_sims′)
             H⁻¹_like_sims′ = h⁻¹_like_sims′ isa Number ? h⁻¹_like_sims′ : Diagonal(h⁻¹_like_sims′)
             if (H⁻¹_like′ == nothing) || (H⁻¹_update == :sims)
                 H⁻¹_like′ = H⁻¹_like_sims′
@@ -242,7 +242,7 @@ function muse!(
     
     result.time += sum(getindex.(history,:t))
     result.θ = θunreg
-    result.gs = collect(history[end].g_like_sims)
+    result.gs = history[end].g_like_sims
     if get_covariance
         get_J!(result, prob; rng, nsims, ∇z_logLike_atol)
         get_H!(result, prob; rng, nsims=max(1,nsims÷10), ∇z_logLike_atol)
