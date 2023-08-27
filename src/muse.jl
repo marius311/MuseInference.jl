@@ -352,12 +352,12 @@ function get_H!(
                 ad_fwd, ad_rev = AD.second_lowest(prob.autodiff), AD.lowest(prob.autodiff)
             
                 ## non-implicit-diff term
-                H1 = implicit_diff_H1_is_zero ? 𝟘 : copyto!(similar(𝟘), permutedims(first(AD.jacobian(θ₀, backend=ad_fwd) do θ
+                H1 = implicit_diff_H1_is_zero ? 𝟘 : copyto!(similar(𝟘), first(AD.jacobian(θ₀, backend=ad_fwd) do θ
                     local x, = sample_x_z(prob, copy(rng), θ)
                     first(AD.gradient(θ₀, backend=ad_rev) do θ′ 
                         logLike(prob, x, ẑ, θ′, UnTransformedθ())
                     end)
-                end)))
+                end))
             
                 ## term involving dzMAP/dθ via implicit-diff (w/ conjugate-gradient linear solve)
                 dFdθ = first(AD.jacobian(θ₀, backend=ad_fwd) do θ
