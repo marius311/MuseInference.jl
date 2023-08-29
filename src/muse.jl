@@ -230,6 +230,11 @@ function muse!(
             θ′ = regularize(θunreg′)
             θ  = inv_transform_θ(prob, θ′)
 
+            # update these as we go for if we stop early
+            result.θ = θunreg
+            result.gs = g_like_sims
+            result.time += t
+
             (checkpoint_filename != nothing) && save(checkpoint_filename, "result", result)
 
         end
@@ -240,9 +245,6 @@ function muse!(
         
     end
     
-    result.time += sum(getindex.(history,:t))
-    result.θ = θunreg
-    result.gs = history[end].g_like_sims
     if get_covariance
         get_J!(result, prob; rng, nsims, ∇z_logLike_atol)
         get_H!(result, prob; rng, nsims=max(1,nsims÷10), ∇z_logLike_atol)
