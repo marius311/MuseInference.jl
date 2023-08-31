@@ -22,11 +22,15 @@ rng = StableRNG(0)
             ("Zygote", AD.ZygoteBackend())
         ]
 
-            (;x) = rand(copy(rng), turing_funnel() | (θ=0,))
-            prob = TuringMuseProblem(turing_funnel() | (;x); autodiff)
-            MuseInference.check_self_consistency(prob, (θ=1,), has_volume_factor=true, rng=copy(rng))
-            result = muse(prob, (θ=1,); rng=copy(rng), get_covariance=true)
-            @test result.dist.μ / result.dist.σ < 2
+            if !(name=="Zygote" && Threads.nthreads()>1)
+
+                (;x) = rand(copy(rng), turing_funnel() | (θ=0,))
+                prob = TuringMuseProblem(turing_funnel() | (;x); autodiff)
+                MuseInference.check_self_consistency(prob, (θ=1,), has_volume_factor=true, rng=copy(rng))
+                result = muse(prob, (θ=1,); rng=copy(rng), get_covariance=true)
+                @test result.dist.μ / result.dist.σ < 2
+                
+            end
 
         end
 

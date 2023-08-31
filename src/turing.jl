@@ -125,6 +125,10 @@ function TuringMuseProblem(
             error("Unsupposed backend from Turing: $(Turing.ADBACKEND)")
         end
     end
+    if (Threads.nthreads() > 1) && hasmethod(AD.ZygoteBackend,Tuple{}) && (autodiff isa typeof(AD.ZygoteBackend()))
+        error("Turing doesn't support using the Zygote backend when Threads.nthreads()>1. Use a different backend or a single-thread.")
+    end
+
     # ensure tuple
     params = (params...,)
     # prevent this constructor from advancing the default RNG for more clear reproducibility
