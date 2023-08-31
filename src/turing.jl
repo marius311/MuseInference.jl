@@ -125,6 +125,10 @@ function TuringMuseProblem(
             error("Unsupposed backend from Turing: $(Turing.ADBACKEND)")
         end
     end
+    if (Threads.nthreads() > 1) && hasmethod(AD.ZygoteBackend,Tuple{}) && (autodiff isa typeof(AD.ZygoteBackend()))
+        error("Turing doesn't support using the Zygote backend when Threads.nthreads()>1. Use a different backend or a single-thread.")
+    end
+
     # ensure tuple
     params = (params...,)
     # prevent this constructor from advancing the default RNG for more clear reproducibility
@@ -187,13 +191,13 @@ standardizeθ(prob::TuringMuseProblem, θ::Number) =
 
 function logLike(prob::TuringMuseProblem, x, z, θ, θ_space)
     trans = is_transformed(θ_space) ? prob.trans_z′_θ′ : prob.trans_z′_θ
-    vi = DynPPL.SimpleVarInfo((;x..., z..., θ...), 0, trans)
+    vi = DynPPL.SimpleVarInfo((;x..., z..., θ...), trans)
     DynPPL.logjoint(prob.model, vi)
 end
     
 function logPriorθ(prob::TuringMuseProblem, θ, θ_space)
     trans = is_transformed(θ_space) ? prob.trans_z′_θ′ : prob.trans_z′_θ
-    vi = DynPPL.SimpleVarInfo((;θ...), 0, trans)
+    vi = DynPPL.SimpleVarInfo((;θ...), trans)
     DynPPL.logprior(prob.model_for_prior, vi)
 end
 
@@ -210,12 +214,22 @@ end
 
 function sample_x_z(prob::TuringMuseProblem, rng::AbstractRNG, θ)
     model = DynPPL.condition(prob.model, θ)
-    vi = DynPPL.SimpleVarInfo((;), 0, prob.trans_z′_θ)
+    vi = DynPPL.SimpleVarInfo((;θ...), prob.trans_z′_θ)
     vars = DynPPL.values_as(last(DynPPL.evaluate!!(model, rng, vi)), NamedTuple)
     (x = ComponentVector(select(vars, prob.observed_vars)), z = ComponentVector(select(vars, prob.latent_vars)))
 end
 
 
+
+# benevolent type-piracy:
+function DynPPL.SimpleVarInfo(nt::NamedTuple, trans::DynPPL.AbstractTransformation)
+    if isempty(nt)
+        T = DynPPL.SIMPLEVARINFO_DEFAULT_ELTYPE
+    else
+        T = DynPPL.float_type_with_fallback(DynPPL.infer_nested_eltype(typeof(nt)))
+    end
+    DynPPL.SimpleVarInfo(nt, zero(T), trans)
+end
 
 function _namedtuple(vi::DynPPL.VarInfo)
     # `values_as` seems to return Real arays so narrow eltype
