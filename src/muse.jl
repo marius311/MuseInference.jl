@@ -225,7 +225,7 @@ function muse!(
             )
 
             # Newton-Rhapson step
-            θunreg′ = θ′ .- T(α) .* (H⁻¹_post′ * g_post′)
+            θunreg′ = θ′ .- T.(α) .* (H⁻¹_post′ * g_post′)
             θunreg  = inv_transform_θ(prob, θunreg′)
             θ′ = regularize(θunreg′)
             θ  = inv_transform_θ(prob, θ′)
@@ -515,7 +515,6 @@ function get_J!(
                 ẑ₀ = @something(z₀, z)
                 ẑ, = ẑ_at_θ(prob, x, ẑ₀, θ₀; ∇z_logLike_atol)
                 g = ∇θ_logLike(prob, x, ẑ, θ₀, UnTransformedθ())
-                progress && ProgressMeter.next!(pbar)
                 return g
             catch err
                 if skip_errors && !(err isa InterruptException)
@@ -524,6 +523,8 @@ function get_J!(
                 else
                     rethrow(err)
                 end
+            finally
+                progress && ProgressMeter.next!(pbar)
             end
         end))
 
