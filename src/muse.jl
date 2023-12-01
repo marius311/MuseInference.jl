@@ -142,6 +142,12 @@ function muse!(
         save_MAPs = x -> nothing
     end
     
+    if !(α isa Base.Callable)
+        α = let α = α
+            i -> α
+        end
+    end
+
     xs_ẑs_sims = pmap(pool, split_rng(rng, nsims)) do rng
         (x, z) = sample_x_z(prob, rng, θ)
         (x, @something(z₀, z))
@@ -225,7 +231,7 @@ function muse!(
             )
 
             # Newton-Rhapson step
-            θunreg′ = θ′ .- T.(α) .* (H⁻¹_post′ * g_post′)
+            θunreg′ = θ′ .- T.(α(i)) .* (H⁻¹_post′ * g_post′)
             θunreg  = inv_transform_θ(prob, θunreg′)
             θ′ = regularize(θunreg′)
             θ  = inv_transform_θ(prob, θ′)
