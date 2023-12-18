@@ -9,8 +9,8 @@ end
 
 using Documenter, MuseInference, Turing
 
-# change to true to skip running doc code
-Documenter.Utilities.Selectors.disable(::Type{Documenter.Expanders.ExampleBlocks}) = false
+# uncomment to skip running doc code
+# Documenter.Selectors.disable(::Type{Documenter.Expanders.ExampleBlocks}) = true
 
 makedocs(
     sitename = "MuseInference",
@@ -25,7 +25,7 @@ makedocs(
     ],
     checkdocs = :none,
     doctest = false,
-    strict = false,
+    warnonly = false,
     modules = [MuseInference]
 )
 
