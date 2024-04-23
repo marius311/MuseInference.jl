@@ -33,9 +33,8 @@ First, load up the packages we'll need:
 
 ```@example 1
 using MuseInference, Turing
-using AbstractDifferentiation, Dates, LinearAlgebra, Printf, PyPlot, Random, Zygote
+using AbstractDifferentiation, Dates, LinearAlgebra, Printf, Plots, Random, Zygote
 Turing.setadbackend(:zygote)
-PyPlot.ioff() # hide
 using Logging # hide
 Logging.disable_logging(Logging.Info) # hide
 Turing.AdvancedVI.PROGRESS[] = false # hide
@@ -85,7 +84,7 @@ nothing # hide
 We next compute the MUSE estimate for the same problem. To reach the same Monte Carlo error as HMC, the number of MUSE simulations should be the same as the effective sample size of the chain we just ran. This is:
 
 ```@example 1 
-nsims = round(Int, ess_rhat(chain)[:θ,:ess])
+nsims = round(Int, ess(chain)[:θ,:ess])
 ```
 
 Running the MUSE estimate, 
@@ -97,29 +96,14 @@ muse_result = @time muse(model, 0; nsims, get_covariance=true)
 nothing # hide
 ```
 
-Lets also try mean-field variational inference (MFVI) to compare to another approximate method.
+Now let's plot the different estimates. In this case, MUSE gives a nearly perfect answer in a fraction of the time.
 
 ```@example 1
-Random.seed!(4)
-vi(model, ADVI(10, 10)) # warmup # hide
-t_vi = @time @elapsed vi_result = vi(model, ADVI(10, 1000))
-nothing # hide
-```
-
-Now let's plot the different estimates. In this case, MUSE gives a nearly perfect answer at a fraction of the computational cost. MFVI struggles in both speed and accuracy by comparison.
-
-```@example 1
-figure(figsize=(6,5)) # hide
-axvline(0, c="k", ls="--", alpha=0.5)
-hist(collect(chain["θ"][:]), density=true, bins=15, label=@sprintf("HMC (%.1f seconds)", chain.info.stop_time - chain.info.start_time))
+histogram(collect(chain["θ"][:]), normalize=:pdf, bins=10, label=@sprintf("HMC (%.1f seconds)", chain.info.stop_time - chain.info.start_time))
 θs = range(-0.5,0.5,length=1000)
-plot(θs, pdf.(muse_result.dist, θs), label=@sprintf("MUSE (%.1f seconds)", (muse_result.time / Millisecond(1000))))
-plot(θs, pdf.(Normal(vi_result.dist.m[1], vi_result.dist.σ[1]), θs), label=@sprintf("MFVI (%.1f seconds)", t_vi))
-legend()
-xlabel(L"\theta")
-ylabel(L"\mathcal{P}(\theta\,|\,x)")
-title("2048-dimensional noisy funnel")
-gcf() # hide
+plot!(θs, pdf.(muse_result.dist, θs), label=@sprintf("MUSE (%.1f seconds)", (muse_result.time / Millisecond(1000))), lw=2)
+vline!([0], c=:black, ls=:dash, alpha=0.5, label=nothing)
+plot!(xlabel="θ", ylabel="P(θ|x)", title="2048-dimensional noisy funnel")
 ```
 
 The timing[^1] difference is indicative of the speedups over HMC that are possible. These get even more dramatic as we increase dimensionality, which is why MUSE really excels on high-dimensional problems.
@@ -180,7 +164,7 @@ prob = SimpleMuseProblem(
     function logPrior(θ)
         -θ^2/(2*3^2)
     end;
-    autodiff = AD.ZygoteBackend()
+    autodiff = AbstractDifferentiation.ZygoteBackend()
 )
 nothing # hide
 ```
