@@ -148,12 +148,7 @@ function muse!(
         end
     end
 
-    xs_ẑs_sims = pmap(pool, split_rng(rng, nsims)) do rng
-        (x, z) = sample_x_z(prob, rng, θ)
-        (x, @something(z₀, z))
-    end
-    xs = [[prob.x];                                 first.(xs_ẑs_sims)]
-    ẑs = [[@something(z₀, zero(xs_ẑs_sims[1][2]))]; last.(xs_ẑs_sims)]
+    ẑs = fill(@something(z₀, zero(sample_x_z(prob, copy(rng), θ).z)), nsims+1)
     T = eltype(first(ẑs))
 
     # set up progress bar
@@ -165,19 +160,14 @@ function muse!(
             
             t₀ = now()
 
-            if i > 1
-                xs = [[prob.x]; pmap(pool, split_rng(rng, nsims)) do rng
-                    sample_x_z(prob, rng, θ).x
-                end]
-            end
-
             if i > 2
                 Δθ′ = history[end].θ′ - history[end-1].θ′
                 sqrt(-(Δθ′' * history[end].H⁻¹_post′ * Δθ′)) < θ_rtol && break
             end
 
             # MUSE gradient
-            gẑs = pmap(pool, xs, ẑs, fill(θ,length(xs))) do x, ẑ_prev, θ
+            gẑs = pmap(pool, [nothing; split_rng(rng, nsims)], ẑs) do rng, ẑ_prev
+                x = (rng == nothing) ? prob.x : sample_x_z(prob, rng, θ).x
                 local ẑ, history = ẑ_at_θ(prob, x, ẑ_prev, θ; ∇z_logLike_atol)
                 g  = ∇θ_logLike(prob, x, ẑ, θ,  UnTransformedθ())
                 g′ = ∇θ_logLike(prob, x, ẑ, θ′, Transformedθ())
