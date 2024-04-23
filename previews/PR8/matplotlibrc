@@ -1,0 +1,12 @@
+axes.labelsize  : 13
+axes.titlesize  : 13
+
+errorbar.capsize : 2
+
+legend.frameon  : False
+legend.fontsize : 12
+
+figure.dpi      : 100
+figure.figsize  : 6.4, 4.8
+
+mathtext.fontset : cm
